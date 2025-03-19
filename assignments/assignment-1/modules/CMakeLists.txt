@@ -33,15 +33,10 @@ endif()
 #===============================================================================
 # 3. ADD THE TARGET
 #===============================================================================
-add_library(AlgebricIden SHARED AlgebricIden.cpp)
-add_library(MultiInstOpt SHARED MultiInstOpt.cpp)
-add_library(StrengthRedu SHARED StrengthRedu.cpp)
+file(GLOB SOURCES "./*.cpp")
+add_library(Assignment1 SHARED ${SOURCES})
 
 # Allow undefined symbols in shared objects on Darwin (this is the default
 # behaviour on Linux)
-target_link_libraries(AlgebricIden
-  "$<$<PLATFORM_ID:Darwin>:-undefined dynamic_lookup>")
-target_link_libraries(MultiInstOpt
-  "$<$<PLATFORM_ID:Darwin>:-undefined dynamic_lookup>")
-target_link_libraries(StrengthRedu
+target_link_libraries(Assignment1
   "$<$<PLATFORM_ID:Darwin>:-undefined dynamic_lookup>")
