@@ -31,7 +31,9 @@
 *.out
 *.app
 
-# Distribution / packaging
+# Building and Trash
 build/
 *.bc
 *.so
+*.optimized.bc
+*.optimized.ll
