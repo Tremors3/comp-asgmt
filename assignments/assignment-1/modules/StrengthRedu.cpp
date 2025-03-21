@@ -266,4 +266,4 @@ namespace GraboidPasses {
     return (StrengthRedu::runOnFunction(F) ? PreservedAnalyses::none() : PreservedAnalyses::all());
   }
 
-} // namespace MyPasses
+} // namespace GraboidPasses

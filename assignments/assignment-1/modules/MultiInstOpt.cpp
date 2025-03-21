@@ -21,4 +21,4 @@ namespace GraboidPasses {
     return (false ? PreservedAnalyses::none() : PreservedAnalyses::all());
   }
 
-} // namespace MyPasses
+} // namespace GraboidPasses

@@ -56,6 +56,6 @@ namespace GraboidPasses {
     Instruction* addShiftInstruction(Instruction *BeforeInst, Instruction::BinaryOps ShiftType, Value *Oper1, uint64_t ShiftAmount);
   };
 
-} // namespace
+} // namespace GraboidPasses
 
 #endif // MY_PASSES_H
