@@ -14,6 +14,7 @@ export_variables() {
 
     # Check if llvm installation path is supplied via argument
     if [ ! -z "$1" ]; then
+        [ -d "$1" ] || { echo "Could not find the given llvm installation path: $1."; exit 1; }
         LLVM_DIR_TMP="$1"
     fi
 
@@ -29,7 +30,7 @@ export_variables() {
         elif command -v llvm-config-19 &> /dev/null; then
             LLVM_DIR_TMP=$(llvm-config-19 --libdir)
         else
-            echo "Could not find the llvm lib folder automatically"
+            echo "Could not find the llvm lib folder automatically."
             exit 1
         fi
     fi
@@ -92,7 +93,7 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="Foo"
+SOURCE_FILE="SRTests"
 IS_LL_FILE=true
 #IS_LL_FILE=false
 
@@ -126,11 +127,11 @@ execute_passes() {
     llvm-dis "${SOURCE_FILE_PATH}.optimized.bc" -o "${SOURCE_FILE_PATH}.optimized.ll"
 }
 
-echo "Running opt to apply pass..."
-echo
+echo "Running opt to apply pass..."; echo
+
 #execute_passes "algebric-iden"
 #execute_passes "multi-inst-opt"
-#execute_passes "strength-redu"
-execute_passes "algebric-iden,multi-inst-opt,strength-redu"
-echo
-echo "Build and processing completed."
+execute_passes "strength-redu"
+#execute_passes "algebric-iden,multi-inst-opt,strength-redu"
+
+echo; echo "Build and processing completed."
