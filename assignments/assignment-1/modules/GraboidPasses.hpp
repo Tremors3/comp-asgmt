@@ -32,12 +32,23 @@ namespace GraboidPasses {
   struct StrengthRedu: PassInfoMixin<StrengthRedu> {
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &);
     static bool isRequired() { return true; }
+    
+    // Iterate Functions
     bool runOnFunction(Function &F);
     bool runOnBasicBlock(BasicBlock &BB);
+
+    // Strength Reduction Managers
     bool strengthReduction(Instruction &Inst);
+    bool strengthReductionMul(Instruction &Inst);
+    bool strengthReductionDiv(Instruction &BinInst);
+    
+    // Strength Reduction Applicators
+    bool convertDivToAShr(Instruction &BinInst);
     bool convertMulToShlWithAdjustment(Instruction &BinInst, unsigned opnum1, unsigned opnum2, unsigned k);
-    Instruction* addAdjustInstruction(Instruction *After, Instruction::BinaryOps InstType, Value *Oper1, Value *Oper2);
-    Instruction* addShiftLeftInstruction(Instruction *BeforeInst, Value *Oper1, uint64_t ShiftAmount);
+    
+    // Support Functions
+    Instruction* addAdjustInstruction(Instruction *BeforeInst, Instruction::BinaryOps InstType, Value *Oper1, Value *Oper2);
+    Instruction* addShiftInstruction(Instruction *BeforeInst, Instruction::BinaryOps ShiftType, Value *Oper1, uint64_t ShiftAmount);
   };
 
 } // namespace
