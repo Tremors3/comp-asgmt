@@ -19,9 +19,14 @@ using namespace llvm;
 
 namespace GraboidPasses {
     
-  struct AlgebricIden: PassInfoMixin<AlgebricIden> {
+  struct AlgebraicIden: PassInfoMixin<AlgebraicIden> {
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &);
     static bool isRequired() { return true; }
+    bool runOnFunction(Function &F);
+    bool runOnBasicBlock(BasicBlock &BB);
+    bool applyAlgebraicIdentity(Instruction &Inst, unsigned opnum1, unsigned opnum2, int64_t identity);
+    bool applyBothAlgebraicIdentities(Instruction &Inst, Instruction::BinaryOps InstType, uint64_t identity);
+    bool algebraicIdentity(Instruction &Inst);
   };
 
   struct MultiInstOpt: PassInfoMixin<MultiInstOpt> {

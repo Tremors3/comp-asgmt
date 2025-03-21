@@ -20,7 +20,7 @@ llvm::PassPluginLibraryInfo getPassRegisterPluginInfo() {
                 [](StringRef Name, FunctionPassManager &FPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
                   if (Name == "algebric-iden") {
-                    FPM.addPass(GraboidPasses::AlgebricIden());
+                    FPM.addPass(GraboidPasses::AlgebraicIden());
                     return true;
                   }
                   if (Name == "multi-inst-opt") {
