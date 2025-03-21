@@ -32,6 +32,10 @@ namespace GraboidPasses {
   struct MultiInstOpt: PassInfoMixin<MultiInstOpt> {
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &);
     static bool isRequired() { return true; }
+    bool runOnFunction(Function &F);
+    bool runOnBasicBlock(BasicBlock &BB);
+    bool multiInstructionOptimization(Instruction &Inst);
+    bool optimizeInstructions(Instruction *iterInst, Instruction &Inst, Instruction::BinaryOps InstType);
   };
 
   struct StrengthRedu: PassInfoMixin<StrengthRedu> {
