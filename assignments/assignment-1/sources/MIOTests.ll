@@ -15,3 +15,11 @@ define dso_local i32 @test2(i32 noundef %0, i32 noundef %1) #0 {
   %7 = sub nsw i32 %6, 1 ;; f = e - 1
   ret i32 %7
 }
+
+; 𝑎 = 𝑏 + 1, 𝑐 = 𝑎 − 1 ⇒𝑎 = 𝑏 + 1, 𝑐 = 𝑏
+
+define dso_local i32 @test3(i32 noundef %0) #0 {
+  %2 = add nsw i32 %0, 1
+  %3 = sub nsw i32 %2, 1
+  ret i32 %3
+}

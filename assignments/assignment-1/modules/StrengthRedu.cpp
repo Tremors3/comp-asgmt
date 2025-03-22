@@ -190,11 +190,11 @@ namespace GraboidPasses {
    * Function that manages the Strength Reduction 
    * Optimization for multiplication instructions.
    */
-  bool StrengthRedu::strengthReductionMul(Instruction &Inst) {
+  bool StrengthRedu::strengthReductionMul(Instruction &BinInst) {
     
     // To apply the pass we need to ensure 
     // the instruction is of type mul.
-    if (Inst.getOpcode() != Instruction::Mul) { return false; }
+    if (BinInst.getOpcode() != Instruction::Mul) { return false; }
     
     // Defining the maximum distance between the integer 
     // constant value and the relative power of two value.
@@ -204,23 +204,23 @@ namespace GraboidPasses {
     //   1. the integer constant is the first operand;
     //   2. the integer constant is the second operand.
     // We use logic shorting to apply only one of the two cases.
-    return StrengthRedu::convertMulToShlWithAdjustment(Inst, 0, 1, k) || 
-           StrengthRedu::convertMulToShlWithAdjustment(Inst, 1, 0, k);
+    return StrengthRedu::convertMulToShlWithAdjustment(BinInst, 0, 1, k) || 
+           StrengthRedu::convertMulToShlWithAdjustment(BinInst, 1, 0, k);
   }
 
   /*
    * Function that manages the Strength Reduction 
    * Optimization for division instructions.
    */
-  bool StrengthRedu::strengthReductionDiv(Instruction &Inst) {
+  bool StrengthRedu::strengthReductionDiv(Instruction &BinInst) {
     
     // To apply the pass we need to ensure 
     // the instruction is of type sdiv.
-    if (Inst.getOpcode() != Instruction::SDiv) { return false; }
+    if (BinInst.getOpcode() != Instruction::SDiv) { return false; }
   
     // We want to substitute the sdiv with a ashr if the 
     // second operand is a power of two integer constant.
-    return StrengthRedu::convertDivToAShr(Inst);
+    return StrengthRedu::convertDivToAShr(BinInst);
   }
 
   /*
@@ -228,6 +228,11 @@ namespace GraboidPasses {
    * on the instruction given as argument.
    */
   bool StrengthRedu::strengthReduction(Instruction &Inst) {
+
+    // Ensuring the instruction has exactly two operands.
+    // We apply strength reduction on binary instructions.
+    if (Inst.getNumOperands() != 2) { return false; }
+
     return StrengthRedu::strengthReductionMul(Inst) || StrengthRedu::strengthReductionDiv(Inst);
   }
 

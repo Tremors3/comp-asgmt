@@ -25,10 +25,10 @@ namespace GraboidPasses {
   /*
    * Function that implement a simple algebraic identity optimization.
    */
-  bool AlgebraicIden::applyAlgebraicIdentity(Instruction &Inst, unsigned opnum1, unsigned opnum2, int64_t identity) {
+  bool AlgebraicIden::applyAlgebraicIdentity(Instruction &BinInst, unsigned opnum1, unsigned opnum2, int64_t identity) {
     
-    Value *Oper1 = Inst.getOperand(opnum1);
-    Value *Oper2 = Inst.getOperand(opnum2);
+    Value *Oper1 = BinInst.getOperand(opnum1);
+    Value *Oper2 = BinInst.getOperand(opnum2);
     
     // To apply the pass at least one of the two operands needs to be an integer constant.
     // Here we are checking if the second operand is an integer constant.
@@ -42,7 +42,7 @@ namespace GraboidPasses {
       // Replacing all instances of the original instruction with its
       // first operator. By doing so we are completely unlinking the 
       // original instruction.
-      Inst.replaceAllUsesWith(Oper1);
+      BinInst.replaceAllUsesWith(Oper1);
       
       return true;
     }
@@ -54,14 +54,14 @@ namespace GraboidPasses {
    * Function that calls the algebraic identity optimization on 
    * the instruction given as argument in both operand orders.
    */
-  bool AlgebraicIden::applyBothAlgebraicIdentities(Instruction &Inst, Instruction::BinaryOps InstType, uint64_t identity)  {
+  bool AlgebraicIden::applyBothAlgebraicIdentities(Instruction &BinInst, Instruction::BinaryOps InstType, uint64_t identity)  {
     
     // Checking that the instruction to be the correct type. 
-    if (Inst.getOpcode() != InstType) { return false; }
+    if (BinInst.getOpcode() != InstType) { return false; }
 
     // Optimize the expression by considering both possible operand orders.
-    return AlgebraicIden::applyAlgebraicIdentity(Inst, 0, 1, identity) ||
-           AlgebraicIden::applyAlgebraicIdentity(Inst, 1, 0, identity);
+    return AlgebraicIden::applyAlgebraicIdentity(BinInst, 0, 1, identity) ||
+           AlgebraicIden::applyAlgebraicIdentity(BinInst, 1, 0, identity);
   }
 
   /*
@@ -69,6 +69,11 @@ namespace GraboidPasses {
    * add and mull operations on the instruction given as argument.
    */
   bool AlgebraicIden::algebraicIdentity(Instruction &Inst) {
+
+    // Ensuring the instruction has exactly two operands.
+    // We apply algebric identity on binary instructions.
+    if (Inst.getNumOperands() != 2) { return false; }
+
     return AlgebraicIden::applyBothAlgebraicIdentities(Inst, Instruction::Add, 0) ||
            AlgebraicIden::applyBothAlgebraicIdentities(Inst, Instruction::Mul, 1);
   }

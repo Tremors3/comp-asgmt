@@ -15,58 +15,72 @@
 #include <llvm/IR/Value.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/MathExtras.h>
+#include <llvm/Support/raw_ostream.h>
 #include <cmath>
+#include <bits/stdc++.h>
 #include "GraboidPasses.hpp"
 
 using namespace llvm;
 
 namespace GraboidPasses {
 
-  /*
-   * Functiot that optimizes multiple instruction that negate each others:
-   * 𝑎 = 𝑏 + 1, 𝑐 = 𝑎 − 1  ⇒  𝑎 = 𝑏 + 1, 𝑐 = 𝑏
-   */
-  bool MultiInstOpt::optimizeInstructions(Instruction *iterInst, Instruction &Inst, Instruction::BinaryOps InstType) {
-      // Check if the user is a subtraction and if the second therm negates
-      // each other
-      if (iterInst->getOpcode() == InstType && 
-          Inst.getOperand(1) == iterInst->getOperand(1)) {
-        
-        // Replace the uses
-        iterInst->replaceAllUsesWith(Inst.getOperand(0));
-        return true;
-      }
-      
-    return false;
-  }
+  // Mapping inverse/counter operations
+  std::map<Instruction::BinaryOps, Instruction::BinaryOps> MultiInstOpt::CounterOperandMap {
+    {Instruction::Add, Instruction::Sub},
+    {Instruction::Sub, Instruction::Add},
+    {Instruction::Mul, Instruction::SDiv},
+    {Instruction::SDiv, Instruction::Mul}
+  };
   
-  bool MultiInstOpt::multiInstructionOptimization(Instruction &Inst) {
-    Instruction::BinaryOps InstType;
-    // Check if operation is an addition
-    if (Inst.getOpcode() == Instruction::Add) {
-      InstType = Instruction::Sub;
-
-    } else if (Inst.getOpcode() == Instruction::Sub) {
-      InstType = Instruction::Add;
-    
-    } else {
-      return false; 
-    }
-
+  /*
+   * Function that iters all the users of a given instruction 
+   * and unlinks the useless ones of the given type.
+   */
+  bool MultiInstOpt::applyMultiInstruction(Instruction &BinInst, Instruction::BinaryOps UserType, unsigned opnum1, unsigned opnum2) {
     bool Transformed = false;
-    
-    // Iterate each user of the instruction
-    for (auto userIter = Inst.user_begin(); 
-         userIter != Inst.user_end(); ++userIter) {
-      
-      // Check for successfull cast
-      if (Instruction *iterInst = dyn_cast<Instruction>(*userIter)){
-        Transformed |= MultiInstOpt::optimizeInstructions(iterInst, Inst, InstType);
-    
-      } else { Transformed = false; }
+
+    // Iterating the users...
+    for (auto UserIter : BinInst.users()) {
+
+      if (Instruction *InstUser = dyn_cast<Instruction>(UserIter)) {
+
+        // Checking if the user instruction type is the inverse/counter of 
+        // the original instruction. Also checking the second operand of 
+        // the user is equal to the one of the original instruction.
+        // ps. we dont care if the operand is a integer constant or not,
+        // we only care it to be equal to its original counterpart.
+        if (InstUser->getOpcode() == UserType && 
+          InstUser->getOperand(opnum2) == BinInst.getOperand(opnum2)) {
+
+          // We acknowleged that the user instruction is useless; so 
+          // we replace all its uses with the equivalent operand.
+          InstUser->replaceAllUsesWith(BinInst.getOperand(opnum1));
+          Transformed |= true;
+        }
+      }
     }
 
     return Transformed;
+  }
+
+  /*
+   * Function that tries to apply a multi instruction optimization 
+   * over the instruction given as parameter.
+   */
+  bool MultiInstOpt::multiInstruction(Instruction &Inst) {
+
+    // Ensuring the instruction has exactly two operands.
+    // We apply multi-inst optimization on binary instructions.
+    if (Inst.getNumOperands() != 2) { return false; }
+
+    // Getting the instruction type and its counter instruction type.
+    Instruction::BinaryOps InstType = static_cast<Instruction::BinaryOps>(Inst.getOpcode());
+    auto UserTypeIter = CounterOperandMap.find(InstType);
+    if (UserTypeIter == CounterOperandMap.end()) { return false; /* if not found */ }
+    Instruction::BinaryOps UserType = UserTypeIter->second;
+
+    // Applying the multi instruction optimization over main instruction users.
+    return MultiInstOpt::applyMultiInstruction(Inst, UserType, 0, 1);
   }
 
   /*
@@ -78,7 +92,7 @@ namespace GraboidPasses {
     bool Transformed = false;
     
     for (auto &Inst: BB) {
-      Transformed |= MultiInstOpt::multiInstructionOptimization(Inst);
+      Transformed |= MultiInstOpt::multiInstruction(Inst);
     }
   
     return Transformed;
@@ -97,13 +111,10 @@ namespace GraboidPasses {
     return Transformed;
   }
 
-   /*
+  /*
    * Our entry point.
    */
   PreservedAnalyses MultiInstOpt::run(Function &F, FunctionAnalysisManager &) {
-
-    outs() << "PASSO MultiInstOpt\n";
-
     return (MultiInstOpt::runOnFunction(F) ? PreservedAnalyses::none() : PreservedAnalyses::all());
   }
 
