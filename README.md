@@ -1,4 +1,4 @@
-# Compiler Assigments
+# Compiler Assignments
 
 This repository contains the assignments for the Compilers Pt.2 course (2024-25).
 
@@ -13,18 +13,18 @@ This repository contains the assignments for the Compilers Pt.2 course (2024-25)
 The following hierarchy shows the general organization of files and folders.
 
 ```bash
-assigments/
+assignments/
 │
-├─── assigment-1/
+├─── assignment-1/
 │    │
 │    ├─── modules/    # .cpp files of our passes
 │    ├─── sources/    # .c files and .ll files for testing
 │    ├─── build.sh    # Useful shell script to build and process
 │    └─── Instr.md    # Instructions on how to test our passes
 │
-├─── assigment-2/
+├─── assignment-2/
 ├─── ...
-└─── assigment-N/
+└─── assignment-N/
 ```
 
 ## Contributors
