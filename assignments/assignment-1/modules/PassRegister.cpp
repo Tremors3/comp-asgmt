@@ -7,8 +7,8 @@
 //
 // License: GPL3
 //=============================================================================
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/PassPlugin.h"
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Passes/PassPlugin.h>
 #include "GraboidPasses.hpp"
 
 using namespace llvm;

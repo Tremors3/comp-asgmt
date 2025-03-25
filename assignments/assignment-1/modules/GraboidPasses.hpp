@@ -8,11 +8,10 @@
 // License: GPL3
 //=============================================================================
 #pragma once
-#include <cstdint>
 #ifndef GRABOID_PASSES_H
 #define GRABOID_PASSES_H
 
-#include "llvm/IR/PassManager.h"
+#include <llvm/IR/PassManager.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Instruction.h>
 #include <bits/stdc++.h>
