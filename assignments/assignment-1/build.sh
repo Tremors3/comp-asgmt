@@ -118,10 +118,10 @@ if [ "$IS_LL_FILE" = false ]; then
     clang -Xclang -disable-O0-optnone -O0 -S -emit-llvm -c "${SOURCE_FILE_PATH}.c" -o "${SOURCE_FILE_PATH}.ll"
     
     # Converting LLVM IR to SSA form using the mem2reg pass
-    opt -p mem2reg ${SOURCE_FILE_PATH}.ll -o ${SOURCE_FILE_PATH}.bc
+    opt -p mem2reg "${SOURCE_FILE_PATH}.ll" -o "${SOURCE_FILE_PATH}.bc"
 
     # Running llvm-dis to convert .bc to .ll
-    llvm-dis ${SOURCE_FILE_PATH}.bc -o ${SOURCE_FILE_PATH}.ll
+    llvm-dis "${SOURCE_FILE_PATH}.bc" -o "${SOURCE_FILE_PATH}.ll"
 fi
 
 execute_passes() {
