@@ -94,7 +94,6 @@ check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
 SOURCE_FILE="SRTests"
-IS_LL_FILE=true
 #IS_LL_FILE=false
 
 # [EDIT] Assignment
@@ -104,6 +103,7 @@ ASSIGNMENT="Assignment1"
 SOURCE_FILE_PATH="$SOURCES_DIR/$SOURCE_FILE"
 
 # Building
+
 cd "$BUILD_DIR"
 echo "Running cmake..."
 cmake -DLT_LLVM_INSTALL_DIR=$LLVM_DIR "$MODULES_DIR"
@@ -112,9 +112,16 @@ make
 cd ..
 
 # Processing
+
 if [ "$IS_LL_FILE" = false ]; then
-    # Running clang for .ll generation
-    clang -O0 -emit-llvm -S -c "${SOURCE_FILE_PATH}.c" -o "${SOURCE_FILE_PATH}.ll"
+    # Running clang with optnone flag disabled for .ll generation
+    clang -Xclang -disable-O0-optnone -O0 -S -emit-llvm -c "${SOURCE_FILE_PATH}.c" -o "${SOURCE_FILE_PATH}.ll"
+    
+    # Converting LLVM IR to SSA form using the mem2reg pass
+    opt -p mem2reg ${SOURCE_FILE_PATH}.ll -o ${SOURCE_FILE_PATH}.bc
+
+    # Running llvm-dis to convert .bc to .ll
+    llvm-dis ${SOURCE_FILE_PATH}.bc -o ${SOURCE_FILE_PATH}.ll
 fi
 
 execute_passes() {
