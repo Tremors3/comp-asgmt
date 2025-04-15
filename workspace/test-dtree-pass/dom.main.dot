@@ -1,0 +1,17 @@
+digraph "Dominator tree for 'main' function" {
+	label="Dominator tree for 'main' function";
+
+	Node0x626b81e29340 [shape=record,label="{0:\l|  %1 = call i32 @rand() #2\l  %2 = icmp ne i32 %1, 0\l  br i1 %2, label %3, label %5\l}"];
+	Node0x626b81e29340 -> Node0x626b81e70c30;
+	Node0x626b81e29340 -> Node0x626b81e70bd0;
+	Node0x626b81e29340 -> Node0x626b81e71620;
+	Node0x626b81e70c30 [shape=record,label="{3:\l|  %4 = add nsw i32 1, 1\l  br label %14\l}"];
+	Node0x626b81e70bd0 [shape=record,label="{14:\l|  %.1 = phi i32 [ %4, %3 ], [ %13, %12 ]\l  %15 = add nsw i32 %.1, 1\l  ret i32 %15\l}"];
+	Node0x626b81e71620 [shape=record,label="{5:\l|  %6 = add nsw i32 1, 1\l  %7 = icmp ne i32 %1, 0\l  br i1 %7, label %8, label %10\l}"];
+	Node0x626b81e71620 -> Node0x626b81e70b70;
+	Node0x626b81e71620 -> Node0x626b81e70c90;
+	Node0x626b81e71620 -> Node0x626b81e832d0;
+	Node0x626b81e70b70 [shape=record,label="{8:\l|  %9 = add nsw i32 %6, 1\l  br label %12\l}"];
+	Node0x626b81e70c90 [shape=record,label="{12:\l|  %.0 = phi i32 [ %9, %8 ], [ %11, %10 ]\l  %13 = add nsw i32 %.0, 1\l  br label %14\l}"];
+	Node0x626b81e832d0 [shape=record,label="{10:\l|  %11 = add nsw i32 %6, 1\l  br label %12\l}"];
+}
