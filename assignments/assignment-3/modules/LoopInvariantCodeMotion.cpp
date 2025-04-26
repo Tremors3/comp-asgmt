@@ -42,6 +42,48 @@ namespace {
     std::map<Loop*, std::set<Instruction*>> loopInvariantMap;
 
     /**
+     * Restituisce true se l'istruzione I è movibile rispetto al loop L,
+     * altrimenti restituisce false.
+     */
+    bool isMovableInstruction(Instruction *I) {
+      // Set di opcode che rappresentano istruzioni spostabili
+      static const std::set<unsigned> MovableOpcodes = {
+        // Aritmetica
+        Instruction::Add,
+        Instruction::Sub,
+        Instruction::Mul,
+        Instruction::UDiv,
+        Instruction::SDiv,
+        
+        // Operazioni logiche
+        Instruction::And,
+        Instruction::Or,
+        Instruction::Xor,
+        
+        // Shift
+        Instruction::Shl,
+        Instruction::LShr,
+        Instruction::AShr,
+        
+        // Comparazioni
+        Instruction::ICmp,
+        Instruction::FCmp,
+        
+        // Cast
+        Instruction::ZExt,
+        Instruction::SExt,
+        Instruction::Trunc,
+        Instruction::BitCast,
+        
+        // Caricamenti da memoria
+        Instruction::Load
+      };
+    
+      // Controlla se l'istruzione è nel set di opcode spostabili
+      return MovableOpcodes.count(I->getOpcode()) > 0;
+    }
+
+    /**
      * Restituisce true se l'istruzione phi contiene reaching definitions 
      * riferite a definizioni strettamente locate al di fuori del loop, 
      * altrimenti restituisce false.
@@ -62,7 +104,6 @@ namespace {
         if (Instruction *defInst = dyn_cast<Instruction>(incoming)) {
           if (isInstructionInsideLoop(defInst, L)) { return false; }
         }
-
       }
 
       return true;
@@ -73,16 +114,16 @@ namespace {
      * Se V risulta loop-invariant viene restituito true, in caso contrairo false.
      */
     bool static isValueLoopInvariant(Value *V, Loop *L, 
-      std::set<Instruction*> *invariantInstructions, bool deep = false) {
+      std::set<Instruction*> *invariantInstructions, bool phi_check = false) {
       
       // Le costanti intere sono loop-invariant.
-      if (isa<Constant>(V)) return true;
+      if (isa<Constant>(V)) { return true; }
 
       if (Instruction *I = dyn_cast<Instruction>(V)) {
 
         // Se l'istruzione che definisce il valore V si trova 
         // esterna al loop L, allora V è loop-invariant.
-        if (!isInstructionInsideLoop(I, L)) return true;
+        if (!isInstructionInsideLoop(I, L)) { return true; }
   
         // Se l'istruzione che definisce il valore V si trova 
         // interna del loop L, dobbiamo verificare alcune cose.
@@ -106,8 +147,8 @@ namespace {
             // dovremmo anche spostare la phi, se è dentro al loop
             // ma fa riferimento solo a valori esterni.
             // Questa operazione però è un po' complicata.
-            if (deep && phiOnlyOutDefs(phi, L)) return true;
-
+            if (phi_check && phiOnlyOutDefs(phi, L)) { return true; }
+            
             return false;
           }
 
@@ -115,13 +156,31 @@ namespace {
           if (invariantInstructions->count(I) == 0) {
             return false;
           }
-
         }
-        
       }
 
       return true;
+    }
 
+    /**
+     * Controlla se l'istruzione corrente è loop-invariant.
+     * Se lo è, restituisce true, altrimenti false.
+     */
+    bool isInstructionLoopInvariant(Loop &L, Instruction *currInst, 
+      std::set<Instruction*> &invariantInstructionSet){
+      
+      if (!isMovableInstruction(currInst)) { return false; }
+
+      // Controlliamo che ciascun operando sia loop-invariant.
+      for (Use &U : currInst->operands()) {
+        if (!isValueLoopInvariant(U.get(), &L, &invariantInstructionSet)) {
+          return false;
+        }
+      }
+
+      // Se anche solo un operando non è risultato loop-invariant
+      // allora l'intera istruzione non è loop-invariant.
+      return true;
     }
 
     /**
@@ -129,71 +188,29 @@ namespace {
      * In caso affermativo la aggiunge all'insieme delle istruzioni loop
      * invariant, altrimenti no. 
      */
-    void markLoopInvariantInstructions(Loop &L, std::set<Instruction*> &invariantInstructionSet) {
+    void markLoopInvariantInstructions(Loop &L, 
+      std::set<Instruction*> &invariantInstructionSet) {
       
+      // Itera i BasicBlock del loop
       for (auto *BB : L.getBlocks()) {
 
+        // Itera le istruzioni del BasickBlock
         for (auto &I : *BB) {
           Instruction *currInst = &I;
-    
-          // Condizione opzionale da applicare all'istruzione
-          //if (!currInst->isBinaryOp()) continue;
-    
-          // Assumiamo che l'istruzione sia loop-invariant.
-          bool isLoopInvariant = true;
-
-          // Controlliamo che ciascun operando sia loop-invariant.
-          for (Use &U : currInst->operands()) {
-            if (!isValueLoopInvariant(U.get(), &L, &invariantInstructionSet)) {
-              isLoopInvariant = false;
-              break;
-            }
-          }
-
-          // Se anche solo un operando non è risultato loop-invariant
-          // allora l'intera istruzione non è loop-invariant. In caso
-          // contrario l'istruzione viene aggiunta all'insieme delle
+          
+          // Se l'istruzione e' loop-invariant viene aggiunta all'insieme delle
           // istruzioni loop invariant.
-          if (isLoopInvariant) invariantInstructionSet.insert(currInst);
-
-          if (isLoopInvariant)
+          if (isInstructionLoopInvariant(L, currInst, invariantInstructionSet)) {
+            invariantInstructionSet.insert(currInst);
             printInstruction("\033[1;38:5:033m[LICM-ANALYSIS] Invariant Instruction:\033[0m\t\033[0;38:5:033m", &I);  // DEBUG
+          }
         }
-
       }
-
     }
 
     /*------------------------------------------------------------------------*/
 
     std::map<Loop*, std::set<Instruction*>> candidateInstructionMap;
-    
-    bool isMovableInstruction(Instruction *I) {
-      // Set di opcode che rappresentano istruzioni spostabili
-      static const std::set<unsigned> MovableOpcodes = {
-        Instruction::Add,    // Aritmetica
-        Instruction::Sub,
-        Instruction::Mul,
-        Instruction::UDiv,
-        Instruction::SDiv,
-        Instruction::And,    // Operazioni logiche
-        Instruction::Or,
-        Instruction::Xor,
-        Instruction::Shl,    // Shift
-        Instruction::LShr,
-        Instruction::AShr,
-        Instruction::ICmp,   // Comparazioni
-        Instruction::FCmp,
-        Instruction::ZExt,   // Cast
-        Instruction::SExt,
-        Instruction::Trunc,
-        Instruction::BitCast,
-        Instruction::Load    // Caricamenti da memoria
-      };
-    
-      // Controlla se l'istruzione è nel set di opcode spostabili
-      return MovableOpcodes.count(I->getOpcode()) > 0;
-    }
 
     /**
      * Restituisce true se l'istruzione I si trova in un blocco che
@@ -214,13 +231,14 @@ namespace {
     }
 
     bool variableIsDeadOutsideLoop(Instruction *I, Loop &L) {
-      // Traverse all users of the instruction
+      // Itera tutti gli user di una istruzione
       for (auto *User : I->users()) {
         if (Instruction *UserInst = dyn_cast<Instruction>(User)) {
-          // Check if the user is outside the loop
+          // Controlla se l'user e' fuori dal loop
           if (!L.contains(UserInst->getParent())) { return false; }
         }
       }
+
       return true;
     }
     
@@ -231,6 +249,7 @@ namespace {
     bool isDefinedBeforeUse(){
       return true;  // TODO: implementare
     }
+    
     /**
      * Filtra le istruzioni loop-invariant per determinare se sono
      * candidate a essere spostate all'esterno del loop.
@@ -243,8 +262,10 @@ namespace {
         Instruction* I = InvarInst;
 
         bool isCandidate = \
+          
           // Filtro sulla tipologia di istruzione
           isMovableInstruction(I) &&
+
           // Filtri sull'istruzione
           isValueAssignedOnce() &&
           isDefinedBeforeUse() && (
@@ -256,9 +277,7 @@ namespace {
           candidateInstructionSet.insert(I);
           printInstruction("\033[1;38:5:214m[LICM-FILTERING] Movable Instruction:\033[0m\t\033[0;38:5:214m", I);  // DEBUG
         }
-
       }
-
     }
     
     /*------------------------------MANAGE LOOPS------------------------------*/
@@ -291,32 +310,29 @@ namespace {
 
       markLoopInvariantInstructions(L, invariantInstructionSet);
 
-      filterInvariantInstructions(L, DT, invariantInstructionSet, candidateInstructionSet);
+      filterInvariantInstructions(
+        L, DT, invariantInstructionSet, candidateInstructionSet);
 
       outs() << '\n';
-
     }
     
     /**
      * Visita ricorsiva (DFS-Postorder) sui loops annidati (sub-loops).
      */
     void iterateSubLevelLoops(Loop &L, DominatorTree &DT) {
-
-      for (auto &nested : L.getSubLoops())
+      for (auto &nested : L.getSubLoops()) {
         iterateSubLevelLoops(*nested, DT);
-
+      }
       processLoop(L, DT);
-      
     }
     
     /**
      * Visita iterativa (sequenziale) sui loops di livello più alto (top-loops).
      */
     void iterateTopLevelLoops(LoopInfo &LI, DominatorTree &DT) {
-      
-      for (auto &L : LI.getTopLevelLoops())
+      for (auto &L : LI.getTopLevelLoops()) {
         iterateSubLevelLoops(*L, DT);
-
+      }
     }
 
     /*------------------------------------------------------------------------*/
