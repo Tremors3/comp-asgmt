@@ -26,16 +26,25 @@ namespace {
 
   struct LoopInvariantCodeMotion: PassInfoMixin<LoopInvariantCodeMotion> {
     
-    std::map<Loop*, std::set<Instruction*>> loopInvariantMap;
+    /*-------------------FUNZIONI NON CORRELATE, D'APPOGGIO-------------------*/
 
     bool static isInstructionInsideLoop(Instruction *I, Loop *L) {
       BasicBlock *PBB = I->getParent();
       return L->contains(PBB);
     }
 
+    void static printInstruction(std::string text, Instruction *I) {
+      outs() << text; I->print(outs()); outs() << '\n';  // DEBUG
+    }
+
+    /*------------------------------------------------------------------------*/
+
+    std::map<Loop*, std::set<Instruction*>> loopInvariantMap;
+
     /**
-     * Restituisce true se l'istruzione phi contiene reaching definitions riferite a
-     * definizioni strettamente locate al di fuori del loop, altrimenti restituisce false.
+     * Restituisce true se l'istruzione phi contiene reaching definitions 
+     * riferite a definizioni strettamente locate al di fuori del loop, 
+     * altrimenti restituisce false.
      */
     bool static phiOnlyOutDefs(PHINode *phi, Loop *L) {
 
@@ -63,7 +72,8 @@ namespace {
      * Controlla che il valore V sia loop-invariant rispetto al loop L. 
      * Se V risulta loop-invariant viene restituito true, in caso contrairo false.
      */
-    bool static isValueLoopInvariant(Value *V, Loop *L, std::set<Instruction*> *invariantInstructions, bool deep = false) {
+    bool static isValueLoopInvariant(Value *V, Loop *L, 
+      std::set<Instruction*> *invariantInstructions, bool deep = false) {
       
       // Le costanti intere sono loop-invariant.
       if (isa<Constant>(V)) return true;
@@ -119,21 +129,7 @@ namespace {
      * In caso affermativo la aggiunge all'insieme delle istruzioni loop
      * invariant, altrimenti no. 
      */
-    void markLoopInvariantInstructions(Loop &L) {
-      outs()<< "[LICM] Run on loop at: " 
-            << L.getLoopID() 
-            << ", Depth: " 
-            << L.getLoopDepth() << '\n';  // DEBUG
-
-      // Questo controllo non è strettamente necessario.
-      if (!L.isLoopSimplifyForm()) return;
-    
-      // Ottengo una referenza all'insieme di istruzioni marcate
-      // loop-invariant riferite al loop corrente L. Inizializzo
-      // l'insieme vuoto in modo da pulirlo da sporcizia lasciata
-      // da eventuali run passate.
-      auto &invariantInstructionSet = loopInvariantMap[&L];
-      invariantInstructionSet = {};
+    void markLoopInvariantInstructions(Loop &L, std::set<Instruction*> &invariantInstructionSet) {
       
       for (auto *BB : L.getBlocks()) {
 
@@ -147,60 +143,132 @@ namespace {
           bool isLoopInvariant = true;
 
           // Controlliamo che ciascun operando sia loop-invariant.
-          for (Use &U : currInst->operands())
-            isLoopInvariant &= isValueLoopInvariant(U.get(), &L, &invariantInstructionSet, true);
+          for (Use &U : currInst->operands()) {
+            if (!isValueLoopInvariant(U.get(), &L, &invariantInstructionSet, true)) {
+              isLoopInvariant = false;
+              break;
+            }
+          }
 
           // Se anche solo un operando non è risultato loop-invariant
           // allora l'intera istruzione non è loop-invariant. In caso
           // contrario l'istruzione viene aggiunta all'insieme delle
           // istruzioni loop invariant.
           if (isLoopInvariant) invariantInstructionSet.insert(currInst);
-          
+
+          if (isLoopInvariant)
+            printInstruction("[LICM-ANALYSIS] Loop Invariant Instruction: ", &I);  // DEBUG
         }
 
       }
 
     }
 
+    /*------------------------------------------------------------------------*/
+
+    std::map<Loop*, std::set<Instruction*>> candidateInstructionMap;
+    
     /**
-     * Visita ricorsiva sui loops (DFS).
+     * Filtra le istruzioni loop-invariant per determinare se sono
+     * candidate a essere spostate all'esterno del loop. 
      */
-    void markRecursiveInvariantInstructions(Loop &L) {
+    void filterInvariantInstructions(Loop &L, DominatorTree &DT, 
+      std::set<Instruction*> &invariantInstructionSet, 
+      std::set<Instruction*> &candidateInstructionSet) {
 
-      for (auto &nested : L.getSubLoops())
-        markRecursiveInvariantInstructions(*nested);
+      for (auto InvarInst : invariantInstructionSet) {
+        Instruction* I = InvarInst;
+        
+        // Si trovano in blocchi che dominano tutte le uscite del loop
+        bool dominatesAllExits = true;
+        SmallVector<BasicBlock *, 0> ExitBlocks;
+        L.getExitBlocks(ExitBlocks);
+        BasicBlock *PBB = I->getParent();
+        for (BasicBlock *BB : ExitBlocks) {
+          if (!DT.dominates(PBB, BB)) {
+            dominatesAllExits = false;
+            break;
+          }
+        }
 
-      markLoopInvariantInstructions(L);
+        if (dominatesAllExits)
+          candidateInstructionSet.insert(I);
+
+        if (dominatesAllExits)
+          printInstruction("[LICM-FILTERING] Code Motion Candidate Instruction: ", I);  // DEBUG
+
+      }
+
+    }
+    
+    /*------------------------------MANAGE LOOPS------------------------------*/
+
+    /**
+     * Per ciascun loop, esegue l'analisi per determinare le istruzioni
+     * loop-invariant. In seguito filtra le istruzioni loop-invariant
+     * per determinare se sono candidate a essere spostate all'esterno
+     * del loop.
+     */
+    void processLoop(Loop &L, DominatorTree &DT) {
+
+      // Questo controllo non è strettamente necessario.
+      if (!L.isLoopSimplifyForm()) return;
+
+      outs() << "[LICM-ANALYSIS] Run on loop at: "
+             << L.getLoopID() 
+             << ", Depth: " 
+             << L.getLoopDepth() << '\n';  // DEBUG
+      
+      // Ottengo una referenza all'insieme di istruzioni marcate
+      // loop-invariant riferite al loop corrente L. Inizializzo
+      // l'insieme vuoto in modo da pulirlo da sporcizia lasciata
+      // da eventuali run passate.
+      auto &invariantInstructionSet = loopInvariantMap[&L];
+      invariantInstructionSet = {};
+
+      auto &candidateInstructionSet = candidateInstructionMap[&L];
+      candidateInstructionSet = {};
+
+      markLoopInvariantInstructions(L, invariantInstructionSet);
+
+      filterInvariantInstructions(L, DT, invariantInstructionSet, candidateInstructionSet);
+
+      outs() << '\n';
+
     }
     
     /**
-     * Per ciascun loop della funzione controlla che le relative istruzioni
-     * siano loop-invariant. Tutte le istruzioni loop-invariant saranno inserite
-     * all'interno di una lista apposita.
+     * Visita ricorsiva (DFS-Postorder) sui loops annidati (sub-loops).
      */
-    void markAllInvariantInstructions(Function &F, FunctionAnalysisManager &AM) {
+    void iterateSubLevelLoops(Loop &L, DominatorTree &DT) {
+
+      for (auto &nested : L.getSubLoops())
+        iterateSubLevelLoops(*nested, DT);
+
+      processLoop(L, DT);
       
-      LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
-
+    }
+    
+    /**
+     * Visita iterativa (sequenziale) sui loops di livello più alto (top-loops).
+     */
+    void iterateTopLevelLoops(LoopInfo &LI, DominatorTree &DT) {
+      
       for (auto &L : LI.getTopLevelLoops())
-        markRecursiveInvariantInstructions(*L);
+        iterateSubLevelLoops(*L, DT);
 
     }
 
-    void printAllInvariantInstructions() {
-      for (auto pair : loopInvariantMap) {
-        for (auto InvarInst : pair.second) {
-          outs() << "[LICM] Invariant Instruction: ";  // DEBUG
-          InvarInst->print(outs());
-          outs() << '\n';
-        }
-      }
-    }
+    /*------------------------------------------------------------------------*/
 
     bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
       outs() << "[LICM] Run on function: " << F.getName() << "\n";  // DEBUG
-      markAllInvariantInstructions(F, AM);
-      printAllInvariantInstructions();
+      
+      LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
+      DominatorTree &DT = AM.getResult<DominatorTreeAnalysis>(F);
+      
+      iterateTopLevelLoops(LI, DT);
+
       return false;
     }
 
