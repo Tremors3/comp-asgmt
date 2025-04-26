@@ -52,7 +52,6 @@
 void WHILE_controlla_se_la_phi_esprime_un_conflitto_di_interessi_fra_variabili() {
     int a = rand();
     int b = rand();
-    int c = rand();
     int x = rand();
     
     a = x + 1;
@@ -64,26 +63,24 @@ void WHILE_controlla_se_la_phi_esprime_un_conflitto_di_interessi_fra_variabili()
     x = a + 1;
 }
 
-// void WHILE_BREAK_controlla_se_la_phi_esprime_un_conflitto_di_interessi_fra_variabili() {
-//     int a = rand();
-//     int b = rand();
-//     int c = rand();
-//     int x = rand();
+void WHILE_BREAK_controlla_se_la_phi_esprime_un_conflitto_di_interessi_fra_variabili() {
+    int a = rand();
+    int b = rand();
+    int x = rand();
     
-//     a = x + 1;
-//     x = a + 1;
-//     while (rand()) {
-//         a = b + 1;
-//         a = a + 1;
-//         if (rand()) break;
-//     }
-//     x = a + 1;
-// }
+    a = x + 1;
+    x = a + 1;
+    while (rand()) {
+        a = b + 1;
+        a = a + 1;
+        if (rand()) break;
+    }
+    x = a + 1;
+}
 
 void FOR_controlla_se_la_phi_esprime_un_conflitto_di_interessi_fra_variabili() {
     int a = rand();
     int b = rand();
-    int c = rand();
     int x = rand();
     
     a = x + 1;

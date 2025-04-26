@@ -34,7 +34,7 @@ namespace {
     }
 
     void static printInstruction(std::string text, Instruction *I) {
-      outs() << text; I->print(outs()); outs() << '\n';  // DEBUG
+      outs() << text; I->print(outs()); outs() << "\033[0m\n";  // DEBUG
     }
 
     /*------------------------------------------------------------------------*/
@@ -53,15 +53,15 @@ namespace {
         Value *incoming = phi->getIncomingValue(j);
 
         // Le costanti sono definite internamente alla phi, all'interno del loop
-        if (isa<Constant>(incoming)) return false;
+        if (isa<Constant>(incoming)) { return false; }
 
         // Tutte le reaching definitions devono devono risiedere al di fuori del loop;
         // se incontriamo anche solo una reaching definition riferita ad una definizione
         // interna al loop, allora l'istruzione a cui l'operatore appartiene non sarà
         // loop-invariant.
-        if (Instruction *defInst = dyn_cast<Instruction>(incoming))
-          if (isInstructionInsideLoop(defInst, L))
-            return false;
+        if (Instruction *defInst = dyn_cast<Instruction>(incoming)) {
+          if (isInstructionInsideLoop(defInst, L)) { return false; }
+        }
 
       }
 
@@ -144,7 +144,7 @@ namespace {
 
           // Controlliamo che ciascun operando sia loop-invariant.
           for (Use &U : currInst->operands()) {
-            if (!isValueLoopInvariant(U.get(), &L, &invariantInstructionSet, true)) {
+            if (!isValueLoopInvariant(U.get(), &L, &invariantInstructionSet)) {
               isLoopInvariant = false;
               break;
             }
@@ -157,7 +157,7 @@ namespace {
           if (isLoopInvariant) invariantInstructionSet.insert(currInst);
 
           if (isLoopInvariant)
-            printInstruction("[LICM-ANALYSIS] Loop Invariant Instruction: ", &I);  // DEBUG
+            printInstruction("\033[1;38:5:033m[LICM-ANALYSIS] Invariant Instruction:\033[0m\t\033[0;38:5:033m", &I);  // DEBUG
         }
 
       }
@@ -168,9 +168,72 @@ namespace {
 
     std::map<Loop*, std::set<Instruction*>> candidateInstructionMap;
     
+    bool isMovableInstruction(Instruction *I) {
+      // Set di opcode che rappresentano istruzioni spostabili
+      static const std::set<unsigned> MovableOpcodes = {
+        Instruction::Add,    // Aritmetica
+        Instruction::Sub,
+        Instruction::Mul,
+        Instruction::UDiv,
+        Instruction::SDiv,
+        Instruction::And,    // Operazioni logiche
+        Instruction::Or,
+        Instruction::Xor,
+        Instruction::Shl,    // Shift
+        Instruction::LShr,
+        Instruction::AShr,
+        Instruction::ICmp,   // Comparazioni
+        Instruction::FCmp,
+        Instruction::ZExt,   // Cast
+        Instruction::SExt,
+        Instruction::Trunc,
+        Instruction::BitCast,
+        Instruction::Load    // Caricamenti da memoria
+      };
+    
+      // Controlla se l'istruzione è nel set di opcode spostabili
+      return MovableOpcodes.count(I->getOpcode()) > 0;
+    }
+
+    /**
+     * Restituisce true se l'istruzione I si trova in un blocco che
+     * domina tutte le uscite del loop L, altrimenti false.
+     */
+    bool instructionDominatesAllExits(Instruction *I, Loop &L, DominatorTree &DT) {
+      
+      BasicBlock *PBB = I->getParent();
+      SmallVector<BasicBlock *, 0> ExitBlocks;
+      
+      L.getExitBlocks(ExitBlocks);
+      
+      for (BasicBlock *BB : ExitBlocks) {
+        if (!DT.dominates(PBB, BB)) { return false; }
+      }
+      
+      return true;
+    }
+
+    bool variableIsDeadOutsideLoop(Instruction *I, Loop &L) {
+      // Traverse all users of the instruction
+      for (auto *User : I->users()) {
+        if (Instruction *UserInst = dyn_cast<Instruction>(User)) {
+          // Check if the user is outside the loop
+          if (!L.contains(UserInst->getParent())) { return false; }
+        }
+      }
+      return true;
+    }
+    
+    bool isValueAssignedOnce() {
+      return true;  // TODO: implementare
+    }
+    
+    bool isDefinedBeforeUse(){
+      return true;  // TODO: implementare
+    }
     /**
      * Filtra le istruzioni loop-invariant per determinare se sono
-     * candidate a essere spostate all'esterno del loop. 
+     * candidate a essere spostate all'esterno del loop.
      */
     void filterInvariantInstructions(Loop &L, DominatorTree &DT, 
       std::set<Instruction*> &invariantInstructionSet, 
@@ -178,24 +241,21 @@ namespace {
 
       for (auto InvarInst : invariantInstructionSet) {
         Instruction* I = InvarInst;
-        
-        // Si trovano in blocchi che dominano tutte le uscite del loop
-        bool dominatesAllExits = true;
-        SmallVector<BasicBlock *, 0> ExitBlocks;
-        L.getExitBlocks(ExitBlocks);
-        BasicBlock *PBB = I->getParent();
-        for (BasicBlock *BB : ExitBlocks) {
-          if (!DT.dominates(PBB, BB)) {
-            dominatesAllExits = false;
-            break;
-          }
-        }
 
-        if (dominatesAllExits)
+        bool isCandidate = \
+          // Filtro sulla tipologia di istruzione
+          isMovableInstruction(I) &&
+          // Filtri sull'istruzione
+          isValueAssignedOnce() &&
+          isDefinedBeforeUse() && (
+            instructionDominatesAllExits(I, L, DT) ||
+            variableIsDeadOutsideLoop(I, L)
+          );
+
+        if (isCandidate) {
           candidateInstructionSet.insert(I);
-
-        if (dominatesAllExits)
-          printInstruction("[LICM-FILTERING] Code Motion Candidate Instruction: ", I);  // DEBUG
+          printInstruction("\033[1;38:5:214m[LICM-FILTERING] Movable Instruction:\033[0m\t\033[0;38:5:214m", I);  // DEBUG
+        }
 
       }
 
@@ -212,12 +272,12 @@ namespace {
     void processLoop(Loop &L, DominatorTree &DT) {
 
       // Questo controllo non è strettamente necessario.
-      if (!L.isLoopSimplifyForm()) return;
+      //if (!L.isLoopSimplifyForm()) return;
 
-      outs() << "[LICM-ANALYSIS] Run on loop at: "
+      outs() << "\033[1;38:5:255m[LICM] Run on loop at:\033[0m \033[0;38:5:255m"
              << L.getLoopID() 
              << ", Depth: " 
-             << L.getLoopDepth() << '\n';  // DEBUG
+             << L.getLoopDepth() << "\033[0m\n";  // DEBUG
       
       // Ottengo una referenza all'insieme di istruzioni marcate
       // loop-invariant riferite al loop corrente L. Inizializzo
@@ -262,7 +322,9 @@ namespace {
     /*------------------------------------------------------------------------*/
 
     bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
-      outs() << "[LICM] Run on function: " << F.getName() << "\n";  // DEBUG
+      outs() << "\033[1;38:5:255m[LICM] Run on function:\033[0m \033[0;38:5:255m" 
+             << F.getName() 
+             << "\033[0m\n";  // DEBUG
       
       LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
       DominatorTree &DT = AM.getResult<DominatorTreeAnalysis>(F);
