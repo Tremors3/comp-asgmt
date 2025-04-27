@@ -182,4 +182,29 @@ void WHILE_annidato() {
     }
     x = a + 1;
 }
+
+void WHILE_annidato_due_volte() {
+    int a = rand();
+    int aa = rand();
+    int b = rand();
+    int x = rand();
+    int xx = rand();
+    
+    a = x + 1;
+    x = a + 1;
+    aa = xx + 1;
+    xx = aa + 1;
+    while (rand()) {
+        while (rand()) {
+            a = b + 1;
+            a = a + 1;
+        }
+        while (rand()) {
+            aa = b + 1;
+            aa = aa + 1;
+        }
+    }
+    x = a + 1;
+    xx = aa + 1;
+}
 /* -------------------------------------------------------------------------- */

@@ -28,7 +28,8 @@ namespace {
     
     /*-------------------FUNZIONI NON CORRELATE, D'APPOGGIO-------------------*/
 
-    void static printInstruction(std::string text, Instruction *I, std::string terminator = "\033[0m\n") {
+    void static printInstruction(std::string text, Instruction *I, 
+      std::string terminator = "\033[0m\n") {
       outs() << text; I->print(outs()); outs() << terminator;  // DEBUG
     }
 
@@ -57,7 +58,6 @@ namespace {
         if (Instruction *DefInst = dyn_cast<Instruction>(ReachingDef))
           if (L->contains(DefInst)) 
             return false;
-        
       }
 
       return true;
@@ -174,11 +174,10 @@ namespace {
           if (isInstructionLoopInvariant(L, CurrInst, invariantInstructionSet)) {
             invariantInstructionSet.insert(CurrInst);
 
-            // DEBUG
             printInstruction(
                 "\033[1;38:5:033m[LICM-ANALYSIS] Invariant Instruction:\033[0m\t"
                 "\033[0;38:5:033m", CurrInst
-            );
+            );  // DEBUG
           }
         }
       
@@ -192,7 +191,8 @@ namespace {
      * Restituisce true se l'istruzione I si trova in un blocco che
      * domina tutte le uscite del loop L, altrimenti false.
      */
-    bool instructionDominatesAllExits(Instruction *I, Loop &L, DominatorTree &DT) {
+    bool instructionDominatesAllExits(Instruction *I, Loop &L, 
+      DominatorTree &DT) {
       
       SmallVector<BasicBlock *, 0> ExitBlocks;
       L.getExitBlocks(ExitBlocks);
@@ -218,10 +218,11 @@ namespace {
     }
     
     /**
-     * Se l'istruzione I è utilizzata da una phi all'interno del loop, controlla dove
-     * sono definite le reaching definitions della phi. Se sono tutte esterne al loop,
-     * allora I è assegnato una sola volta. Altrimenti, se anche solo una p una costante
-     * oppure una definizione interna al loop, allora I è assegnato più di una volta.
+     * Se l'istruzione I è utilizzata da una phi all'interno del loop, 
+     * controlla dove sono definite le reaching definitions della phi. 
+     * Se sono tutte esterne al loop, allora I è assegnato una sola volta. 
+     * Altrimenti, se anche solo una p una costante oppure una definizione 
+     * interna al loop, allora I è assegnato più di una volta.
      */
     bool isValueAssignedOnce(Instruction *I, Loop &L) {
 
@@ -250,20 +251,22 @@ namespace {
      * Restituisce true se l'istruzione I è definita prima di essere usata.
      */
     bool isDefinedBeforeUse(Instruction *I, Loop &L, DominatorTree &DT) {
-      // https://llvm.org/doxygen/classllvm_1_1Instruction.html#a784097fca76abad9e815cf1692de79c4
-      BasicBlock *BB = I->getParent(); 
+      BasicBlock *PBB = I->getParent(); 
       
       for (User *U : I->users()) {
         Instruction *UserInst = dyn_cast<Instruction>(U);
-        BasicBlock *UseBB = UserInst->getParent(); 
+        BasicBlock *UBB = UserInst->getParent(); 
 
-        if (L.contains(UseBB) && BB == UseBB) {
-          if (UserInst->comesBefore(I))
-            return false;
-        } else {
-          if (!DT.dominates(BB, UseBB))
-            return false;
+        if (L.contains(UBB)) {
+          if (PBB == UBB) {
+            if (UserInst->comesBefore(I))
+              return false;
+          } else {
+            if (!DT.dominates(PBB, UBB))
+              return false;
+          }
         }
+        
       }
 
       return true;
@@ -302,33 +305,43 @@ namespace {
 
     /*----------------------------MOVE INSTRUCTIONS---------------------------*/
  
+    /**
+     * Ottieni l'ultima istruzione del preheader.
+     */
     Instruction *getLastInstructionBeforeLoop(Loop &L) {
       
-      // Prendo l'header del Loop
-      BasicBlock *B = L.getHeader();
-      // Prendo l'iteratore dei predecessori del basicblock
-      auto it = pred_begin(B);
-      // Aumento di uno l'iteratore per prendere il basicblock 
-      // immediatamente precedente
+      BasicBlock *BB = L.getHeader();
+      
+      // Iteratore dei predecessori del basicblock.
+      auto it = pred_begin(BB);  
+      
+      // Aumento di uno l'iteratore per prendere 
+      // il basicblock immediatamente precedente.
       BasicBlock *predecessor = *(++it);
       
-      // Restituisco l'ultima istruzione del basicblock
+      // Restituisco l'ultima istruzione del basicblock.
       return &predecessor->back();
     }
 
+    /**
+     * Effettua lo spostamento.
+     */
     void moveBeforeLoop(Instruction *I, Loop &L) {
       I->moveBefore(getLastInstructionBeforeLoop(L));
     }
 
+    /**
+     * Muove le istruzioni candidate nel blocco precedente al loop.
+     */
     void moveInstructions(Loop &L, 
       std::set<Instruction*> &candidateInstructionSet) {
       for (auto &I : candidateInstructionSet){
         printInstruction("\033[1;38:5:196m[LICM-MOVING] Moved Instruction:"
                          "\033[0m\t\033[0;38:5:196m", I, "");  // DEBUG
-          
+        
         moveBeforeLoop(I, L);
-          
-        printInstruction("   --> ", I);  // DEBUG
+        
+        printInstruction("  -->", I);  // DEBUG
       }
     }
 
@@ -381,8 +394,8 @@ namespace {
     /*------------------------------------------------------------------------*/
 
     bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
-      outs() << "\033[1;38:5:255m[LICM] Run on function:\033[0m "
-             << "\033[0;38:5:255m" << F.getName() << "\033[0m\n";  // DEBUG
+      outs() << "\033[1;38:5:40m[LICM] Run on function:\033[0m "
+             << "\033[0;38:5:40m" << F.getName() << "\033[0m\n";  // DEBUG
       
       LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
       DominatorTree &DT = AM.getResult<DominatorTreeAnalysis>(F);
