@@ -111,3 +111,75 @@ void VIVA_controlla_se_la_variabile_e_morta_fuori_dal_loop() {
     a = a + a;
 }
 /* -------------------------------------------------------------------------- */
+void ciclo_infinito_WHILE() {
+    int a = rand();
+    int b = rand();
+
+    while (1) {
+        a = b + 1;
+    }
+
+    a = a + a;
+}
+void ciclo_infinito_FOR() {
+    int a = rand();
+    int b = rand();
+
+    for (;;) {
+        b = a + 1;
+    }
+    b = b + b;
+}
+/* -------------------------------------------------------------------------- */
+void variabile_definita_molteplici_volte_CON_COSTANTE() {
+    int a = rand();
+    int b = rand();
+
+    while(rand()) {
+
+        if (rand()) {
+            a = 5;
+        } else {
+            a = b + 1;
+        }
+
+        b = a + 1;
+    }
+
+    a = a + 1;
+}
+void variabile_definita_molteplici_volte_CON_VARIABILE() {
+    int a = rand();
+    int b = rand();
+    int c = rand();
+
+    while(rand()) {
+
+        if (rand()) {
+            a = c - 1;
+        } else {
+            a = b + 1;
+        }
+
+        b = a + 1;
+    }
+
+    a = a + 1;
+}
+/* -------------------------------------------------------------------------- */
+void WHILE_annidato() {
+    int a = rand();
+    int b = rand();
+    int x = rand();
+    
+    a = x + 1;
+    x = a + 1;
+    while (rand()) {
+        while (rand()) {
+            a = b + 1;
+            a = a + 1;
+        }
+    }
+    x = a + 1;
+}
+/* -------------------------------------------------------------------------- */

@@ -28,13 +28,8 @@ namespace {
     
     /*-------------------FUNZIONI NON CORRELATE, D'APPOGGIO-------------------*/
 
-    bool static isInstructionInsideLoop(Instruction *I, Loop *L) {
-      BasicBlock *PBB = I->getParent();
-      return L->contains(PBB);
-    }
-
-    void static printInstruction(std::string text, Instruction *I) {
-      outs() << text; I->print(outs()); outs() << "\033[0m\n";  // DEBUG
+    void static printInstruction(std::string text, Instruction *I, std::string terminator = "\033[0m\n") {
+      outs() << text; I->print(outs()); outs() << terminator;  // DEBUG
     }
 
     /*------------------------------------------------------------------------*/
@@ -50,17 +45,17 @@ namespace {
 
       // Itero ciascuna reaching definition.
       for (unsigned j = 0; j < phi->getNumIncomingValues(); ++j) {
-        Value *incoming = phi->getIncomingValue(j);
+        Value *ReachingDef = phi->getIncomingValue(j);
 
-        if (isa<Constant>(incoming)) 
+        if (isa<Constant>(ReachingDef)) 
           return false;
 
         // Tutte le reaching definitions devono devono risiedere al di fuori del
         // loop; se incontriamo anche solo una reaching definition riferita ad 
         // una definizione interna al loop, allora l'istruzione a cui 
         // l'operando appartiene non sarà loop-invariant.
-        if (Instruction *defInst = dyn_cast<Instruction>(incoming))
-          if (isInstructionInsideLoop(defInst, L)) 
+        if (Instruction *DefInst = dyn_cast<Instruction>(ReachingDef))
+          if (L->contains(DefInst)) 
             return false;
         
       }
@@ -87,7 +82,7 @@ namespace {
       if (Instruction *I = dyn_cast<Instruction>(V)) {
 
         // Se l'istruzione è esterna al loop, il valore è loop-invariant.
-        if (!isInstructionInsideLoop(I, L))
+        if (!L->contains(I))
           return true;
 
         // Se è una PHI, può comunque essere loop-invariant se tutti i suoi 
@@ -201,9 +196,6 @@ namespace {
       
       SmallVector<BasicBlock *, 0> ExitBlocks;
       L.getExitBlocks(ExitBlocks);
-      
-      if (ExitBlocks.empty())
-        return false;
 
       for (BasicBlock *BB : ExitBlocks)
         if (!DT.dominates(I->getParent(), BB))
@@ -225,14 +217,58 @@ namespace {
       return true;
     }
     
-    bool isValueAssignedOnce() {
-      return true;  // TODO: implementare
+    /**
+     * Se l'istruzione I è utilizzata da una phi all'interno del loop, controlla dove
+     * sono definite le reaching definitions della phi. Se sono tutte esterne al loop,
+     * allora I è assegnato una sola volta. Altrimenti, se anche solo una p una costante
+     * oppure una definizione interna al loop, allora I è assegnato più di una volta.
+     */
+    bool isValueAssignedOnce(Instruction *I, Loop &L) {
+
+      for (User *User : I->users()) {
+
+        if (isa<PHINode>(User) && L.contains(dyn_cast<Instruction>(User))) {
+          PHINode *phi = dyn_cast<PHINode>(User);
+          
+          for (unsigned j = 0; j < phi->getNumIncomingValues(); ++j) {
+            Value *ReachingDef = phi->getIncomingValue(j);
+            
+            if (isa<Constant>(ReachingDef))
+              return false;
+            
+            if (Instruction *ReachingDefInst = dyn_cast<Instruction>(ReachingDef))
+              if (ReachingDefInst != I && L.contains(ReachingDefInst))
+                return false;
+          }
+        }
+      }
+
+      return true;
     }
     
-    bool isDefinedBeforeUse(){
-      return true;  // TODO: implementare
+    /**
+     * Restituisce true se l'istruzione I è definita prima di essere usata.
+     */
+    bool isDefinedBeforeUse(Instruction *I, Loop &L, DominatorTree &DT) {
+      // https://llvm.org/doxygen/classllvm_1_1Instruction.html#a784097fca76abad9e815cf1692de79c4
+      BasicBlock *BB = I->getParent(); 
+      
+      for (User *U : I->users()) {
+        Instruction *UserInst = dyn_cast<Instruction>(U);
+        BasicBlock *UseBB = UserInst->getParent(); 
+
+        if (L.contains(UseBB) && BB == UseBB) {
+          if (UserInst->comesBefore(I))
+            return false;
+        } else {
+          if (!DT.dominates(BB, UseBB))
+            return false;
+        }
+      }
+
+      return true;
     }
-    
+
     /**
      * Filtra le istruzioni loop-invariant per determinare se sono
      * candidate a essere spostate all'esterno del loop.
@@ -245,8 +281,8 @@ namespace {
     {
       for (Instruction* I : invariantInstructionSet) {
           
-        bool assignedOnce     = isValueAssignedOnce();
-        bool definedBeforeUse = isDefinedBeforeUse();
+        bool assignedOnce     = isValueAssignedOnce(I, L);
+        bool definedBeforeUse = isDefinedBeforeUse(I, L, DT);
         bool dominatesExits   = instructionDominatesAllExits(I, L, DT);
         bool deadOutsideLoop  = isVariableDeadOutsideLoop(I, L);
 
@@ -255,7 +291,7 @@ namespace {
 
         if (isCandidate) {
           candidateInstructionSet.insert(I);
-
+          
           printInstruction(
             "\033[1;38:5:214m[LICM-FILTERING] Movable Instruction:\033[0m\t"
             "\033[0;38:5:214m", I
@@ -263,7 +299,39 @@ namespace {
         }
       }
     }
-    
+
+    /*----------------------------MOVE INSTRUCTIONS---------------------------*/
+ 
+    Instruction *getLastInstructionBeforeLoop(Loop &L) {
+      
+      // Prendo l'header del Loop
+      BasicBlock *B = L.getHeader();
+      // Prendo l'iteratore dei predecessori del basicblock
+      auto it = pred_begin(B);
+      // Aumento di uno l'iteratore per prendere il basicblock 
+      // immediatamente precedente
+      BasicBlock *predecessor = *(++it);
+      
+      // Restituisco l'ultima istruzione del basicblock
+      return &predecessor->back();
+    }
+
+    void moveBeforeLoop(Instruction *I, Loop &L) {
+      I->moveBefore(getLastInstructionBeforeLoop(L));
+    }
+
+    void moveInstructions(Loop &L, 
+      std::set<Instruction*> &candidateInstructionSet) {
+      for (auto &I : candidateInstructionSet){
+        printInstruction("\033[1;38:5:196m[LICM-MOVING] Moved Instruction:"
+                         "\033[0m\t\033[0;38:5:196m", I, "");  // DEBUG
+          
+        moveBeforeLoop(I, L);
+          
+        printInstruction("   --> ", I);  // DEBUG
+      }
+    }
+
     /*------------------------------MANAGE LOOPS------------------------------*/
 
     /**
@@ -287,7 +355,9 @@ namespace {
   
       filterInvariantInstructions(
         L, DT, invariantInstructionSet, candidateInstructionSet);
-  
+      
+      moveInstructions(L, candidateInstructionSet);
+      
       outs() << '\n';
     }
     
