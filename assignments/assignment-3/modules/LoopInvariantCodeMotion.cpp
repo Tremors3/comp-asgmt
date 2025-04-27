@@ -1,24 +1,17 @@
+//==============================================================================
+// FILE:
+//    LoopInvariantCodeMotion.cpp
+//
+// DESCRIPTION:
+//    Academic implementation of loop invariant code motion, LICM, pass.
+//
+// License: GPL3
+//============================================================================== SBATTILO SPINGILO
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
-#include <llvm/IR/Instructions.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/PassManager.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/InstrTypes.h>
-#include <llvm/IR/Instruction.h>
-#include <llvm/IR/Value.h>
 #include <llvm/IR/Dominators.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/GenericDomTree.h>
-#include <llvm/Support/MathExtras.h>
-#include <llvm/Support/raw_ostream.h>
 #include <llvm/Analysis/LoopInfo.h>
-#include <llvm/Analysis/IVDescriptors.h>
-#include <llvm/ADT/BreadthFirstIterator.h>
 #include <bits/stdc++.h>
-#include <cmath>
 
 using namespace llvm;
 
