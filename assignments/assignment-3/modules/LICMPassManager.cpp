@@ -31,17 +31,23 @@ namespace graboidpasses::licm {
       
       LoopInvariantAnalysis lia;
       lia.markLoopInvariantInstructions(L, invariantInstructionSet);
+
+      if (invariantInstructionSet.empty())
+        return false;
       
       FilterCandidateAnalysis fca;
       fca.filterInvariantInstructions(
         L, DT, invariantInstructionSet, candidateInstructionSet);
       
+      if (candidateInstructionSet.empty())
+        return false;
+
       CodeMotion cm;
       cm.moveInstructions(L, candidateInstructionSet);
       
       outs() << '\n';
 
-      return false;
+      return true;
   }
   
   /**

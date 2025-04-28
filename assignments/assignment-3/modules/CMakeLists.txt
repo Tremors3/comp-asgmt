@@ -33,7 +33,7 @@ endif()
 #===============================================================================
 # 3. ADD THE TARGET
 #===============================================================================
-file(GLOB SOURCES "./*.cpp")
+file(GLOB SOURCES "./*.cpp" "./*.hpp")
 add_library(LoopInvariantCodeMotion SHARED ${SOURCES})
 
 # Allow undefined symbols in shared objects on Darwin (this is the default
