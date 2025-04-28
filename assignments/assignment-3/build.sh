@@ -94,7 +94,7 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="licm-test"
+SOURCE_FILE="sample"
 IS_LL_FILE=false
 
 # [EDIT] Assignment
@@ -106,8 +106,12 @@ SOURCE_FILE_PATH="$SOURCES_DIR/$SOURCE_FILE"
 # Building
 
 cd "$BUILD_DIR"
-echo "Running cmake..."
-cmake -DLT_LLVM_INSTALL_DIR=$LLVM_DIR "$MODULES_DIR"
+echo "Would you run cmake? (y/n)"
+read runcmake
+if [ "${runcmake}" = "y" ]; then
+    echo "Running cmake..."
+    cmake -DLT_LLVM_INSTALL_DIR=$LLVM_DIR "$MODULES_DIR"
+fi
 echo "Running make..."
 make
 cd ..
