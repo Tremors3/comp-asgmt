@@ -13,8 +13,8 @@
 namespace graboidpasses::licm {
 
   /**
-   * Restituisce true se l'istruzione phi contiene reaching definitions 
-   * riferite a definizioni strettamente locate al di fuori del loop, 
+   * Restituisce true se l'istruzione phi contiene reaching definitions
+   * riferite a definizioni strettamente locate al di fuori del loop,
    * altrimenti restituisce false.
    */
   bool LoopInvariantAnalysis::phiOnlyOutDefs(PHINode *phi, Loop *L) {
@@ -23,15 +23,15 @@ namespace graboidpasses::licm {
     for (unsigned j = 0; j < phi->getNumIncomingValues(); ++j) {
       Value *ReachingDef = phi->getIncomingValue(j);
 
-      if (isa<Constant>(ReachingDef)) 
+      if (isa<Constant>(ReachingDef))
         return false;
 
       // Tutte le reaching definitions devono devono risiedere al di fuori del
-      // loop; se incontriamo anche solo una reaching definition riferita ad 
-      // una definizione interna al loop, allora l'istruzione a cui 
+      // loop; se incontriamo anche solo una reaching definition riferita ad
+      // una definizione interna al loop, allora l'istruzione a cui
       // l'operando appartiene non sarà loop-invariant.
       if (Instruction *DefInst = dyn_cast<Instruction>(ReachingDef))
-        if (L->contains(DefInst)) 
+        if (L->contains(DefInst))
           return false;
     }
 
@@ -45,9 +45,9 @@ namespace graboidpasses::licm {
    * valori di ingresso esterni (se phi_check è true).
    */
   bool LoopInvariantAnalysis::isValueLoopInvariant(
-    Value *V, 
-    Loop *L, 
-    std::set<Instruction*> *invariantInstructions, 
+    Value *V,
+    Loop *L,
+    std::set<Instruction*> *invariantInstructions,
     bool phi_check)
   {
     // Le costanti sono sempre loop-invariant.
@@ -60,7 +60,7 @@ namespace graboidpasses::licm {
       if (!L->contains(I))
         return true;
 
-      // Se è una PHI, può comunque essere loop-invariant se tutti i suoi 
+      // Se è una PHI, può comunque essere loop-invariant se tutti i suoi
       // input provengono da fuori dal loop (opzionale, phi_check).
       if (auto *Phi = dyn_cast<PHINode>(I)) {
         if (phi_check && LoopInvariantAnalysis::phiOnlyOutDefs(Phi, L))
@@ -77,7 +77,7 @@ namespace graboidpasses::licm {
   }
 
   /**
-   * Restituisce true se il tipo dell'istrizione I è tra quelli considerati 
+   * Restituisce true se il tipo dell'istruzione I è tra quelli considerati
    * ammissibili per essere marcati come loop-invariant. Se non lo è,
    * viene restituito false.
    */
@@ -118,11 +118,11 @@ namespace graboidpasses::licm {
    * Se lo è, restituisce true, altrimenti false.
    */
   bool LoopInvariantAnalysis::isInstructionLoopInvariant(
-    Loop &L, 
-    Instruction *currInst, 
+    Loop &L,
+    Instruction *currInst,
     std::set<Instruction*> &invariantInstructionSet)
   {
-    if (!LoopInvariantAnalysis::isInstructionTypeAdmissible(currInst)) 
+    if (!LoopInvariantAnalysis::isInstructionTypeAdmissible(currInst))
       return false;
 
     for (Use &U : currInst->operands())
@@ -136,19 +136,19 @@ namespace graboidpasses::licm {
   /**
    * Per ciascuna istruzione del loop stabilisce se è loop-invariant.
    * In caso affermativo la aggiunge all'insieme delle istruzioni loop
-   * invariant, altrimenti no. 
+   * invariant, altrimenti no.
    */
   void LoopInvariantAnalysis::markLoopInvariantInstructions(
-    Loop &L, 
+    Loop &L,
     std::set<Instruction*> &invariantInstructionSet)
   {
     for (auto *BB : L.getBlocks())
       for (auto &I : *BB) {
         Instruction *CurrInst = &I;
-        
+
         // Se l'istruzione è loop-invariant, viene aggiunta all'insieme
         if (LoopInvariantAnalysis::isInstructionLoopInvariant(
-          L, CurrInst, invariantInstructionSet)) 
+          L, CurrInst, invariantInstructionSet))
         {
           invariantInstructionSet.insert(CurrInst);
 
@@ -158,7 +158,7 @@ namespace graboidpasses::licm {
           );  // DEBUG
         }
       }
-    
+
   }
 
 } // namespace graboidpasses::licm
