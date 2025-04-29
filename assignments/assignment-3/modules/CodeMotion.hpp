@@ -12,23 +12,22 @@
 #define GRABOID_CODE_MOTION_H
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
-#include <llvm/IR/Dominators.h>
-#include <llvm/Analysis/LoopInfo.h>
+#include <llvm/IR/BasicBlock.h>
 #include <bits/stdc++.h>
 
 using namespace llvm;
 
 namespace graboidpasses::licm {
-    
+
   struct CodeMotion {
-  
+
   private:
-    Instruction *getLastInstructionBeforeLoop(Loop &L);
-      
-    void moveBeforeLoop(Instruction *I, Loop &L);
-  
+    Instruction *getPreHeaderLastInstruction(Loop &L);
+
+    bool moveBeforeLoop(Instruction *I, Loop &L);
+
   public:
-    void moveInstructions(Loop &L, 
+    bool moveInstructions(Loop &L,
       std::set<Instruction*> &candidateInstructionSet);
   };
 

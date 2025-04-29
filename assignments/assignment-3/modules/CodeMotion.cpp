@@ -13,45 +13,63 @@
 namespace graboidpasses::licm {
 
   /**
-  * Ottieni l'ultima istruzione del preheader.
-  */
-  Instruction *CodeMotion::getLastInstructionBeforeLoop(Loop &L) {
-      
-    BasicBlock *BB = L.getHeader();
-    
-    // Iteratore dei predecessori del basicblock.
-    auto it = pred_begin(BB);  
-    
-    // Aumento di uno l'iteratore per prendere 
-    // il basicblock immediatamente precedente.
-    BasicBlock *predecessor = *(++it);
-    
-    // Restituisco l'ultima istruzione del basicblock.
-    return &predecessor->back();
+   * Ottieni l'ultima istruzione del preheader.
+   */
+  Instruction *CodeMotion::getPreHeaderLastInstruction(Loop &L) {
+
+    // Esiste già un preheader
+    if (BasicBlock *PreHeader = L.getLoopPreheader()) {
+      return PreHeader->getTerminator();
+    }
+
+    // TODO: Non esiste un preheader, ne creiamo uno.
+    //MemorySSAUpdater *MSSAU = nullptr;
+    //if (BasicBlock *NewPreHeader = \
+    //  llvm::InsertPreheaderForLoop(L, DT, LI, MSSAU, true))
+    //{
+    //  return NewPreHeader->getTerminator();
+    //}
+
+    return nullptr;
   }
-    
+
   /**
-  * Effettua lo spostamento.
-  */
-  void CodeMotion::moveBeforeLoop(Instruction *I, Loop &L) {
-    I->moveBefore(CodeMotion::getLastInstructionBeforeLoop(L));
+   * Effettua lo spostamento.
+   */
+  bool CodeMotion::moveBeforeLoop(Instruction *I, Loop &L) {
+    if (Instruction *LI = CodeMotion::getPreHeaderLastInstruction(L)) {
+      I->moveBefore(LI);
+      return true;
+    }
+    return false;
   }
-  
+
   /**
-  * Muove le istruzioni candidate nel blocco precedente al loop.
-  */
-  void CodeMotion::moveInstructions(Loop &L, 
-    std::set<Instruction*> &candidateInstructionSet) {
+   * Muove le istruzioni candidate nel blocco precedente al loop.
+   */
+  bool CodeMotion::moveInstructions(
+    Loop &L,
+    std::set<Instruction*> &candidateInstructionSet)
+  {
+    bool Transformed = false;
+
     for (auto &I : candidateInstructionSet){
-      
+
       utils::printInstruction(
         "\033[1;38:5:196m[LICM-MOVING] Moved Instruction:"
         "\033[0m\t\033[0;38:5:196m", I, "");  // DEBUG
-      
-      CodeMotion::moveBeforeLoop(I, L);
-      
-      utils::printInstruction("  -->", I);  // DEBUG
+
+      bool CurrTransformed = CodeMotion::moveBeforeLoop(I, L);
+
+      Transformed |= CurrTransformed;
+
+      if (CurrTransformed)
+        utils::printInstruction("  -->", I);  // DEBUG
+      else
+        outs() << "  -->  Not moved.\n";  // DEBUG
     }
+
+    return Transformed;
   }
 
 } // namespace graboidpasses::licm
