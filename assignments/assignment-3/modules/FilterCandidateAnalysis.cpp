@@ -36,7 +36,7 @@ namespace graboidpasses::licm {
    * fuori del loop.
    */
   bool FilterCandidateAnalysis::isVariableDeadOutsideLoop(
-    Instruction *I, Loop &L)
+    Instruction *I, Loop &L) // TODO: Usare i successori della classe basicblock
   {
     for (auto *U : I->users())
       if (Instruction *UserInst = dyn_cast<Instruction>(U))

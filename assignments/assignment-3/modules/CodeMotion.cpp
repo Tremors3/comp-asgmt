@@ -23,6 +23,10 @@ namespace graboidpasses::licm {
     }
 
     // TODO: Non esiste un preheader, ne creiamo uno.
+    // SOLUZIONE: verificare che il loop sia in forma norlame
+    // normalizzare il loop eseguendo il relativo passo prima dell'esecuzione del nostro
+
+
     //MemorySSAUpdater *MSSAU = nullptr;
     //if (BasicBlock *NewPreHeader = \
     //  llvm::InsertPreheaderForLoop(L, DT, LI, MSSAU, true))

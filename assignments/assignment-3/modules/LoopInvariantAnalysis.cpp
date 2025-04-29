@@ -63,13 +63,13 @@ namespace graboidpasses::licm {
       // Se è una PHI, può comunque essere loop-invariant se tutti i suoi
       // input provengono da fuori dal loop (opzionale, phi_check).
       if (auto *Phi = dyn_cast<PHINode>(I)) {
-        if (phi_check && LoopInvariantAnalysis::phiOnlyOutDefs(Phi, L))
-          return true;
+        //if (phi_check && LoopInvariantAnalysis::phiOnlyOutDefs(Phi, L))
+        //  return true;
         return false;
       }
 
       // Se l'istruzione è interna e non è loop-invariant, restituisce false.
-      if (invariantInstructions->count(I) == 0)
+      if (invariantInstructions->count(I) == 0) //
         return false;
     }
 
@@ -143,7 +143,7 @@ namespace graboidpasses::licm {
     std::set<Instruction*> &invariantInstructionSet)
   {
     for (auto *BB : L.getBlocks())
-      for (auto &I : *BB) {
+      for (auto &I : *BB) { // BFS
         Instruction *CurrInst = &I;
 
         // Se l'istruzione è loop-invariant, viene aggiunta all'insieme
