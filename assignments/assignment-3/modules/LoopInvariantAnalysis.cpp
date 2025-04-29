@@ -69,48 +69,22 @@ namespace graboidpasses::licm {
       }
 
       // Se l'istruzione è interna e non è loop-invariant, restituisce false.
-      if (invariantInstructions->count(I) == 0) //
+      if (invariantInstructions->count(I) == 0)
+        // CONSIGLIO PROF TODO: utilizzare una lista di visita che tiene traccia
+        // delle definizioni visitate. Ogni volta che viene visitata una
+        // definizione, viene aggiunta alla lista di visite. Prima di
+        // controllare che la definizione sia loop-invariant dobbiamo
+        // controllare che sia presente nella lista delle visitate. Se non è
+        // presente, significa che non sappiamo se è loop-invariant.
+        // Quindi dobbiamo iterare prima su quella. Alternativamente possiamo
+        // iterare le istruzioni tramite una BFS.
+        // DA IMPLEMENTARE: Controllare che una istruzione sia stata visitata
+        //                  prima di controllare se è loop-invariant.
+        // DA IMPLEMENTARE: Iterare le istruzioni tramite una BFS.
         return false;
     }
 
     return true;
-  }
-
-  /**
-   * Restituisce true se il tipo dell'istruzione I è tra quelli considerati
-   * ammissibili per essere marcati come loop-invariant. Se non lo è,
-   * viene restituito false.
-   */
-  bool LoopInvariantAnalysis::isInstructionTypeAdmissible(Instruction *I) {
-
-    static const std::set<unsigned> MovableOpcodes = {
-      // Operazioni Aritmetiche
-      Instruction::Add,
-      Instruction::Sub,
-      Instruction::Mul,
-      Instruction::UDiv,
-      Instruction::SDiv,
-      // Operazioni logiche
-      Instruction::And,
-      Instruction::Or,
-      Instruction::Xor,
-      // Operazioni di Shift
-      Instruction::Shl,
-      Instruction::LShr,
-      Instruction::AShr,
-      // Comparazioni
-      Instruction::ICmp,
-      Instruction::FCmp,
-      // Operazioni di Casting
-      Instruction::ZExt,
-      Instruction::SExt,
-      Instruction::Trunc,
-      Instruction::BitCast,
-      // Caricamenti da memoria
-      Instruction::Load
-    };
-
-    return MovableOpcodes.count(I->getOpcode()) > 0;
   }
 
   /**
@@ -122,9 +96,11 @@ namespace graboidpasses::licm {
     Instruction *currInst,
     std::set<Instruction*> &invariantInstructionSet)
   {
-    if (!LoopInvariantAnalysis::isInstructionTypeAdmissible(currInst))
+    // CONSIGLIO PROF TODO: Controllo che l'istruzione sia binaria.
+    if (!currInst->isBinaryOp())
       return false;
 
+    // CONSIGLIO PROF TODO: Non castare a Use, ma castare direttamente a *Value.
     for (Use &U : currInst->operands())
       if (!LoopInvariantAnalysis::isValueLoopInvariant(
           U.get(), &L, &invariantInstructionSet))
@@ -142,6 +118,9 @@ namespace graboidpasses::licm {
     Loop &L,
     std::set<Instruction*> &invariantInstructionSet)
   {
+    // CONSIGLIO PROF TODO: Aggiunto controllo sulla simplified form.
+    if (!L.isLoopSimplifyForm()) return;
+
     for (auto *BB : L.getBlocks())
       for (auto &I : *BB) { // BFS
         Instruction *CurrInst = &I;

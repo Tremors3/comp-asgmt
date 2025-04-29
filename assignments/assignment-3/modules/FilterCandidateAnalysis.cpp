@@ -36,10 +36,25 @@ namespace graboidpasses::licm {
    * fuori del loop.
    */
   bool FilterCandidateAnalysis::isVariableDeadOutsideLoop(
-    Instruction *I, Loop &L) // TODO: Usare i successori della classe basicblock
+    Instruction *I, Loop &L)
   {
     for (auto *U : I->users())
       if (Instruction *UserInst = dyn_cast<Instruction>(U))
+
+        // CONSIGLIO PROF TODO:
+        // - SCELTA MIGLIORE: Il prof consiglia di utilizzare i successori della
+        // classe basic block per controllare che l'utilizzo dell'istruzione sia
+        // utilizzata al di fuori del loop. (successori delle uscite del loop).
+        // - ALTERNATIVA CHE NON FUNZIONA: Il prof sconsiglia di risolvere il
+        // problema controllando che il blocco che contiene l'uso sia dominato
+        // dalle uscite del loop, perchè da dei problemi quando un'uscita è
+        // condivisa da più branch entranti.
+        // - ALTERNATIVA CORRENTE (NON ESATTA): Il problema consiste nel fatto
+        // che l'uso potrebbe essere definito anche prima del loop; per questo
+        // motivo ci sarebbe bisogno di controllare che il basic block che
+        // contiene l'uso non sia solo esterno al loop, ma che venga anche dopo
+        // di esso, non prima. Ma questo ci riporta al problema risolvibile
+        // tramite la soluzione del prof.
         if (!L.contains(UserInst->getParent()))
           return false;
     return true;
@@ -53,6 +68,11 @@ namespace graboidpasses::licm {
    * interna al loop, allora I è assegnato più di una volta.
    */
   bool FilterCandidateAnalysis::isValueAssignedOnce(Instruction *I, Loop &L) {
+
+    // CONSIGLIO PROF TODO: Il prof consiglia di rimuovere questa funzione
+    // perchè inutile. Dobbiamo ragionare sulla possibilità che due definizioni
+    // collidano in una phi, e che spostarle entrambe nel preheader può essere
+    // dannoso.
 
     for (User *User : I->users()) {
 

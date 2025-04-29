@@ -16,24 +16,9 @@ namespace graboidpasses::licm {
    * Ottieni l'ultima istruzione del preheader.
    */
   Instruction *CodeMotion::getPreHeaderLastInstruction(Loop &L) {
-
-    // Esiste già un preheader
     if (BasicBlock *PreHeader = L.getLoopPreheader()) {
       return PreHeader->getTerminator();
     }
-
-    // TODO: Non esiste un preheader, ne creiamo uno.
-    // SOLUZIONE: verificare che il loop sia in forma norlame
-    // normalizzare il loop eseguendo il relativo passo prima dell'esecuzione del nostro
-
-
-    //MemorySSAUpdater *MSSAU = nullptr;
-    //if (BasicBlock *NewPreHeader = \
-    //  llvm::InsertPreheaderForLoop(L, DT, LI, MSSAU, true))
-    //{
-    //  return NewPreHeader->getTerminator();
-    //}
-
     return nullptr;
   }
 
