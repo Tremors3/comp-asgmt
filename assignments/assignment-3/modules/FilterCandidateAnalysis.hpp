@@ -13,6 +13,8 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
 #include <llvm/IR/Dominators.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Instruction.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <bits/stdc++.h>
 

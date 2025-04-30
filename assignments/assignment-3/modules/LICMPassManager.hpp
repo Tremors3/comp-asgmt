@@ -24,16 +24,16 @@ namespace graboidpasses::licm {
 
   private:
     bool processLoop(Loop &L, DominatorTree &DT);
-  
+
     bool iterateSubLevelLoops(Loop &L, DominatorTree &DT);
-  
+
     bool iterateTopLevelLoops(LoopInfo &LI, DominatorTree &DT);
 
 /*----------------------------------------------------------------------------*/
-  
+
   private:
     bool runOnFunction(Function &F, FunctionAnalysisManager &AM);
- 
+
   public:
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
   };

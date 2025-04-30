@@ -12,34 +12,34 @@
 #define GRABOID_LICM_LOOP_INVARIANT_ANALYSIS_H
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
-#include <llvm/IR/Dominators.h>
 #include <llvm/Analysis/LoopInfo.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/Dominators.h>
 #include <bits/stdc++.h>
 
 using namespace llvm;
 
 namespace graboidpasses::licm {
-  
-  struct LoopInvariantAnalysis {
+
+  class LoopInvariantAnalysis {
+  public:
+    LoopInvariantAnalysis(Loop *L) : loop(L) {}
+
+    void analyzeLoop();
+
+    const std::set<Instruction*> &getInvariantInstructions() const {
+      return invariantInstructions;
+    }
 
   private:
-    bool phiOnlyOutDefs(PHINode *phi, Loop *L);
-    
-    bool isValueLoopInvariant(Value *V, Loop *L, 
-      std::set<Instruction*> *invariantInstructions, 
-      bool phi_check = false);
+    Loop *loop;
+    std::set<Instruction*> visited;
+    std::set<Instruction*> invariantInstructions;
 
-    bool isInstructionTypeAdmissible(Instruction *I);
-
-    bool isInstructionLoopInvariant(Loop &L, Instruction *currInst, 
-      std::set<Instruction*> &invariantInstructionSet);
-  
-  public:
-    void markLoopInvariantInstructions(Loop &L, 
-      std::set<Instruction*> &invariantInstructionSet);
-    
+    bool isValueLoopInvariant(Value *V);
+    bool isInstrLoopInvariant(Instruction *I);
   };
-  
+
 } // namespace graboidpasses::licm
 
 #endif // GRABOID_LICM_LOOP_INVARIANT_ANALYSIS_H

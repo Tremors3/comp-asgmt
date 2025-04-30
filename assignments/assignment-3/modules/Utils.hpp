@@ -17,7 +17,7 @@ using namespace llvm;
 
 namespace graboidpasses::utils {
 
-  void printInstruction(std::string text, Instruction *I, 
+  void printInstruction(std::string text, Instruction *I,
     std::string terminator = "\033[0m\n");
 
 } // namespace graboidpasses::utils

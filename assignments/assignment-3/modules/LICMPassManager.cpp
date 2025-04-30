@@ -29,8 +29,9 @@ namespace graboidpasses::licm {
 
     std::set<Instruction*> candidateInstructionSet, invariantInstructionSet;
 
-    LoopInvariantAnalysis lia;
-    lia.markLoopInvariantInstructions(L, invariantInstructionSet);
+    LoopInvariantAnalysis lia(&L);
+    lia.analyzeLoop();
+    invariantInstructionSet = lia.getInvariantInstructions();
 
     if (!invariantInstructionSet.empty()) {
       FilterCandidateAnalysis fca;
