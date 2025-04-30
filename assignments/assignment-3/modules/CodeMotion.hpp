@@ -21,19 +21,22 @@ namespace graboidpasses::licm {
 
   class CodeMotion {
   public:
-    CodeMotion(Loop *L, std::set<Instruction*> *CI)
+    CodeMotion(Loop *L, const std::set<Instruction*> *CI)
       : loop(L), candidateInstructions(CI) {};
 
     void executeMotion();
-    bool hasOneMotionPerformed() const { return onePerformed; }
+
+    bool hasOneMotionPerformed() const {
+      return onePerformed;
+    }
 
   private:
     Loop *loop;
     bool onePerformed = false;
-    std::set<Instruction*> *candidateInstructions;
+    const std::set<Instruction*> *candidateInstructions;
 
-    bool moveBeforeLoop(Instruction *I);
-    Instruction *getPreHeaderLastInstruction();
+    bool moveInstrBeforeLoop(Instruction *I);
+    Instruction *getPreheaderLastInstruction();
 
     void setOneMotionPerformed() { onePerformed = true; }
 

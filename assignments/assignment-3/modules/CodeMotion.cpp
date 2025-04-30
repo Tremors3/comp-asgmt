@@ -13,19 +13,21 @@
 namespace graboidpasses::licm {
 
   /**
-   * Ottieni l'ultima istruzione del preheader.
+   * Restituisce l'ultima istruzione appartenente al preheader, se esiste;
+   * nullptr altrimenti.
    */
-  Instruction *CodeMotion::getPreHeaderLastInstruction() {
+  Instruction *CodeMotion::getPreheaderLastInstruction() {
     if (BasicBlock *PreHeader = loop->getLoopPreheader())
       return PreHeader->getTerminator();
     return nullptr;
   }
 
   /**
-   * Effettua lo spostamento.
+   * Sposta l'istruzione come parametro nell'ultima posizione del preheader del
+   * loop. Restituisce true se lo spostamento avviene, false altrimenti.
    */
-  bool CodeMotion::moveBeforeLoop(Instruction *I) {
-    if (Instruction *LI = getPreHeaderLastInstruction()) {
+  bool CodeMotion::moveInstrBeforeLoop(Instruction *I) {
+    if (Instruction *LI = getPreheaderLastInstruction()) {
       I->moveBefore(LI);
       setOneMotionPerformed();
       return true;
@@ -34,7 +36,8 @@ namespace graboidpasses::licm {
   }
 
   /**
-   * Muove le istruzioni candidate nel blocco precedente al loop.
+   * Tenta di spostare le istruzioni candidate alla code motion nel preheader
+   * del loop.
    */
   void CodeMotion::executeMotion() {
     for (auto &I : *candidateInstructions) {
@@ -42,7 +45,7 @@ namespace graboidpasses::licm {
         "\033[1;38:5:196m[LICM-MOVING] Moved Instruction:"
         "\033[0m\t\033[0;38:5:196m", I, "");  // DEBUG
 
-      if (moveBeforeLoop(I))
+      if (moveInstrBeforeLoop(I))
         graboidpasses::utils::printInstruction("  -->", I);  // DEBUG
       else
         outs() << "  -->  Not moved.\n";  // DEBUG

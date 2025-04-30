@@ -16,12 +16,15 @@ using namespace llvm;
 
 namespace graboidpasses::licm {
 
+  /**
+   * Entry point.
+   */
   void LicmPassManager::startPass() {
     return iterateTopLevelLoops();
   }
 
   /**
-   * Visita iterativa (sequenziale) sui loops di livello più alto (top-loops).
+   * Visita sequenzialmente i loop di livello più elevato (top level loops).
    */
   void LicmPassManager::iterateTopLevelLoops() {
     for (auto &L : loopinfo->getTopLevelLoops())
@@ -29,7 +32,7 @@ namespace graboidpasses::licm {
   }
 
   /**
-   * Visita ricorsiva (DFS-Postorder) sui loops annidati (sub-loops).
+   * Visita ricorsivamente (DFS Postorder) i loops annidati (sub loops).
    */
   void LicmPassManager::iterateSubLevelLoops(Loop &L) {
     for (auto &nested : L.getSubLoops())
@@ -38,10 +41,10 @@ namespace graboidpasses::licm {
   }
 
   /**
-   * Per ciascun loop, esegue l'analisi per determinare le istruzioni
-   * loop-invariant. In seguito filtra le istruzioni loop-invariant
-   * per determinare se sono candidate a essere spostate all'esterno
-   * del loop.
+   * Gestisce una pipeline di tre operazioni:
+   * Analizza le istruzioni del loop per determinare quali sono loop-invariant.
+   * Filtra le istruzioni candidate allo spostamento tra quelle loop-invariant.
+   * Effettua lo spostamento delle istruzioni filtrate nel preheader del loop.
    */
   void LicmPassManager::processLoop(Loop &L) {
     outs() << "\033[1;38:5:255m[LICM] Run on loop at:\033[0m "

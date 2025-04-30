@@ -26,7 +26,9 @@ namespace graboidpasses::licm {
   class FilterCandidateAnalysis {
 
   public:
-    FilterCandidateAnalysis(Loop *L, DominatorTree *DT, std::set<Instruction*> *II)
+    FilterCandidateAnalysis(
+      Loop *L, DominatorTree *DT, const std::set<Instruction*> *II
+    )
       : loop(L), domtree(DT), invariantInstructions(II) {}
 
     void filterCandidates();
@@ -38,11 +40,11 @@ namespace graboidpasses::licm {
   private:
     Loop *loop;
     DominatorTree *domtree;
-    std::set<Instruction*> *invariantInstructions;
+    const std::set<Instruction*> *invariantInstructions;
     std::set<Instruction*> candidateInstructions;
 
     bool instructionDominatesAllExits(Instruction *I);
-    bool isVariableDeadOutsideLoop(Instruction *I);
+    bool isInstructionDeadOutsideLoop(Instruction *I);
     bool isValueAssignedOnce(Instruction *I);
     bool isDefinedBeforeUse(Instruction *I);
   };

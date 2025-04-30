@@ -12,6 +12,10 @@
 
 namespace graboidpasses::licm {
 
+  /**
+   * Itera le istruzioni appartenenti al loop e decreta se sono loop-invariant
+   * o meno. In caso affermativo le aggiunge ad un set, per marcarle.
+   */
   void LoopInvariantAnalysis::analyzeLoop() {
     if (!loop->isLoopSimplifyForm())
       return;
@@ -32,6 +36,10 @@ namespace graboidpasses::licm {
     }
   }
 
+  /**
+   * Controlla che l'istruzione come parametro sia loop-invariant.
+   * In caso affermativo restituisce true, altrimenti false.
+   */
   bool LoopInvariantAnalysis::isInstrLoopInvariant(Instruction *I) {
 
     if (visited.count(I))
@@ -51,6 +59,10 @@ namespace graboidpasses::licm {
     return true;
   }
 
+  /**
+   * Controlla che il valore come parametro sia loop-invariant.
+   * In caso affermativo restituisce true, altrimenti false.
+   */
   bool LoopInvariantAnalysis::isValueLoopInvariant(Value *V) {
     // Costanti: sempre loop-invariant
     if (isa<Constant>(V))

@@ -15,17 +15,17 @@
 using namespace llvm;
 
 struct LicmPass: PassInfoMixin<LicmPass> {
-
 public:
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
     return (runOnFunction(F, AM) ?
       PreservedAnalyses::none() : PreservedAnalyses::all());
   }
 
-  static bool isRequired() { return true; }
+  static bool isRequired() {
+    return true;
+  }
 
 private:
-
   bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
     outs() << "\033[1;38:5:40m[LICM] Run on function:\033[0m "
            << "\033[0;38:5:40m" << F.getName() << "\033[0m\n";  // DEBUG
@@ -39,6 +39,7 @@ private:
 
     return lpm.hasTransformed();
   }
+
 };
 
 llvm::PassPluginLibraryInfo getPassRegisterPluginInfo() {

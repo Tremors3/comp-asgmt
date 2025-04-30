@@ -13,8 +13,8 @@
 namespace graboidpasses::licm {
 
   /**
-   * Filtra le istruzioni loop-invariant per determinare se sono
-   * candidate a essere spostate all'esterno del loop.
+   * Filtra le istruzioni loop-invariant per determinare se sono candidate allo
+   * spostamento.
    */
   void FilterCandidateAnalysis::filterCandidates() {
 
@@ -30,7 +30,7 @@ namespace graboidpasses::licm {
         FilterCandidateAnalysis::instructionDominatesAllExits(I);
 
       bool deadOutsideLoop  = \
-        FilterCandidateAnalysis::isVariableDeadOutsideLoop(I);
+        FilterCandidateAnalysis::isInstructionDeadOutsideLoop(I);
 
       bool isCandidate = assignedOnce && definedBeforeUse &&
                         (dominatesExits || deadOutsideLoop);
@@ -47,8 +47,9 @@ namespace graboidpasses::licm {
   }
 
   /**
-   * Restituisce true se l'istruzione I si trova in un blocco che
-   * domina tutte le uscite del loop L, altrimenti false.
+   * Controlla che l'istruzione come parametro domini tutte le uscite del loop.
+   * Restituisce true se l'istruzione si trova in un blocco che domina tutte le
+   * uscite del loop, altrimenti false.
    */
   bool FilterCandidateAnalysis::instructionDominatesAllExits(Instruction *I)
   {
@@ -63,53 +64,54 @@ namespace graboidpasses::licm {
   }
 
   /**
-   * Restituisce true se l'istruzione I è morta al di fuori del loop L. Se
-   * tutti gli user di I sono all'interno del loop, allora I è morta al di
-   * fuori del loop.
+   * Controlla che l'istruzione come parametro sia morta dopo il loop.
+   * Restituisce true se l'istruzione è morta dopo il loop, altrimenti false.
    */
-  bool FilterCandidateAnalysis::isVariableDeadOutsideLoop(Instruction *I) {
-    // SmallVector<BasicBlock *, 0> ExitBlocks;
-    // L.getExitBlocks(ExitBlocks);
-    // for (BasicBlock *Exit : ExitBlocks)
-    //   ;
+  bool FilterCandidateAnalysis::isInstructionDeadOutsideLoop(Instruction *I) {
+
+    // CONSIGLIO PROF TODO:
+    // - SCELTA MIGLIORE: Il prof consiglia di utilizzare i successori della
+    //   classe basic block per controllare che l'utilizzo dell'istruzione sia
+    //   utilizzata al di fuori del loop. (successori delle uscite del loop).
+    // - ALTERNATIVA CHE NON FUNZIONA: Il prof sconsiglia di risolvere il
+    //   problema controllando che il blocco che contiene l'uso sia dominato
+    //   dalle uscite del loop, perchè da dei problemi quando un'uscita è
+    //   condivisa da più branch entranti.
+    //   Le definizioni dominano sempre i propri usi. Allora perchè non va bene?
+    // - ALTERNATIVA CORRENTE (NON ESATTA): Il problema consiste nel fatto
+    //   che l'uso potrebbe essere definito anche prima del loop; per questo
+    //   motivo ci sarebbe bisogno di controllare che il basic block che
+    //   contiene l'uso non sia solo esterno al loop, ma che venga anche dopo
+    //   di esso, non prima. Ma questo ci riporta al problema risolvibile
+    //   tramite la soluzione del prof.
 
     for (auto *U : I->users())
       if (Instruction *UserInst = dyn_cast<Instruction>(U))
-
-        // CONSIGLIO PROF TODO:
-        // - SCELTA MIGLIORE: Il prof consiglia di utilizzare i successori della
-        // classe basic block per controllare che l'utilizzo dell'istruzione sia
-        // utilizzata al di fuori del loop. (successori delle uscite del loop).
-        // - ALTERNATIVA CHE NON FUNZIONA: Il prof sconsiglia di risolvere il
-        // problema controllando che il blocco che contiene l'uso sia dominato
-        // dalle uscite del loop, perchè da dei problemi quando un'uscita è
-        // condivisa da più branch entranti.
-        // Le definizioni dominano sempre i propri usi. Allora perchè non va bene?
-        // - ALTERNATIVA CORRENTE (NON ESATTA): Il problema consiste nel fatto
-        // che l'uso potrebbe essere definito anche prima del loop; per questo
-        // motivo ci sarebbe bisogno di controllare che il basic block che
-        // contiene l'uso non sia solo esterno al loop, ma che venga anche dopo
-        // di esso, non prima. Ma questo ci riporta al problema risolvibile
-        // tramite la soluzione del prof.
-
         if (!loop->contains(UserInst->getParent()))
           return false;
     return true;
   }
 
   /**
-   * Se l'istruzione I è utilizzata da una phi all'interno del loop,
-   * controlla dove sono definite le reaching definitions della phi.
-   * Se sono tutte esterne al loop, allora I è assegnato una sola volta.
-   * Altrimenti, se anche solo una è una costante oppure una definizione
-   * interna al loop, allora I è assegnato più di una volta.
+   * Controlla che il loop non contenga molteplici definizioni del valore
+   * definito dall'istruzione passata come parametro.
+   *
+   * Se l'istruzione è utilizzata da una phi all'interno del loop, controlla
+   * dove sono definite le reaching definitions della phi.
+   * Se sono tutte esterne al loop, allora il valore è assegnato una sola volta.
+   * Altrimenti, se anche solo una è una costante oppure una definizione interna
+   * al loop, allora il valore è assegnato più di una volta.
    */
   bool FilterCandidateAnalysis::isValueAssignedOnce(Instruction *I) {
 
-    // CONSIGLIO PROF TODO: Il prof consiglia di rimuovere questa funzione
-    // perchè inutile. Dobbiamo ragionare sulla possibilità che due definizioni
-    // collidano in una phi, e che spostarle entrambe nel preheader può essere
-    // dannoso.
+    // CONSIGLIO PROF TODO:
+    // - Il prof consiglia di rimuovere questa funzione perchè inutile. Dobbiamo
+    //   ragionare sulla possibilità che due definizioni collidano in una phi, e
+    //   che spostarle entrambe nel preheader può essere dannoso.
+    // - In realtà se un valore è definito due volte da due definizioni
+    //   differenti, è sicuro che queste definizioni si trovino in basic blocks
+    //   che non dominano tutte le uscite del loop; di conseguenza il controllo
+    //   è inutile perchè ricadiamo in uno dei casi già trattati.
 
     for (User *User : I->users()) {
 
@@ -133,7 +135,10 @@ namespace graboidpasses::licm {
   }
 
   /**
-   * Restituisce true se l'istruzione I è definita prima di essere usata.
+   * Controlla che la definizione rappresentata dall'istruzione come parametro
+   * sia utilizzata prima dei suoi usi. Restituisce true se l'istruzione è
+   * definita prima di essere usata. Se l'istruzione non domina il suo uso
+   * ma l'user di quell'uso è una phi, va bene lo stesso, ritorna true.
    */
   bool FilterCandidateAnalysis::isDefinedBeforeUse(Instruction *I) {
     BasicBlock *PBB = I->getParent();
@@ -143,20 +148,17 @@ namespace graboidpasses::licm {
       BasicBlock *UBB = UserInst->getParent();
 
       if (loop->contains(UBB)) {
-
         if (PBB == UBB && UserInst->comesBefore(I))
           return false;
 
-        // Se il Basic Block padre della definizione domina quello dell'
-        // utilizzatore e l'utilizzatore non è un'istruzione di tipo phi,
-        // allora restituisce falso; altrimenti restituisce vero.
+        // Se la definizione NON DOMINA il suo uso, ma quell'uso E' operando
+        // di una istruzione phi, allora va bene lo stesso, ritorna true.
+        // Altrimenti se la definizione NON DOMINA il suo uso, e l'uso NON E'
+        // operando di una istruzione phi, allora non va bene, ritorna false.
         if (!domtree->dominates(PBB, UBB) && !isa<PHINode>(UserInst))
           return false;
-
       }
-
     }
-
     return true;
   }
 
