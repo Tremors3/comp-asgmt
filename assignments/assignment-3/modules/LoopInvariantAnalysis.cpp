@@ -41,13 +41,11 @@ namespace graboidpasses::licm {
    * In caso affermativo restituisce true, altrimenti false.
    */
   bool LoopInvariantAnalysis::isInstrLoopInvariant(Instruction *I) {
-
     if (visited.count(I))
       return invariantInstructions.count(I);
 
     visited.insert(I);
 
-    // Limitiamo ai binari per semplicità
     if (!I->isBinaryOp())
       return false;
 
@@ -64,7 +62,6 @@ namespace graboidpasses::licm {
    * In caso affermativo restituisce true, altrimenti false.
    */
   bool LoopInvariantAnalysis::isValueLoopInvariant(Value *V) {
-    // Costanti: sempre loop-invariant
     if (isa<Constant>(V))
       return true;
 
