@@ -38,33 +38,32 @@ namespace graboidpasses::licm {
   bool FilterCandidateAnalysis::isVariableDeadOutsideLoop(
     Instruction *I, Loop &L)
   {
-    SmallVector<BasicBlock *, 0> ExitBlocks;
-    L.getExitBlocks(ExitBlocks);
+    // SmallVector<BasicBlock *, 0> ExitBlocks;
+    // L.getExitBlocks(ExitBlocks);
+    // for (BasicBlock *Exit : ExitBlocks)
+    //   ;
 
-    for (BasicBlock *Exit : ExitBlocks)
-      ;
+    for (auto *U : I->users())
+      if (Instruction *UserInst = dyn_cast<Instruction>(U))
 
-    // for (auto *U : I->users())
-    //   if (Instruction *UserInst = dyn_cast<Instruction>(U))
+        // CONSIGLIO PROF TODO:
+        // - SCELTA MIGLIORE: Il prof consiglia di utilizzare i successori della
+        // classe basic block per controllare che l'utilizzo dell'istruzione sia
+        // utilizzata al di fuori del loop. (successori delle uscite del loop).
+        // - ALTERNATIVA CHE NON FUNZIONA: Il prof sconsiglia di risolvere il
+        // problema controllando che il blocco che contiene l'uso sia dominato
+        // dalle uscite del loop, perchè da dei problemi quando un'uscita è
+        // condivisa da più branch entranti.
+        // Le definizioni dominano sempre i propri usi. Allora perchè non va bene?
+        // - ALTERNATIVA CORRENTE (NON ESATTA): Il problema consiste nel fatto
+        // che l'uso potrebbe essere definito anche prima del loop; per questo
+        // motivo ci sarebbe bisogno di controllare che il basic block che
+        // contiene l'uso non sia solo esterno al loop, ma che venga anche dopo
+        // di esso, non prima. Ma questo ci riporta al problema risolvibile
+        // tramite la soluzione del prof.
 
-    //     // CONSIGLIO PROF TODO:
-    //     // - SCELTA MIGLIORE: Il prof consiglia di utilizzare i successori della
-    //     // classe basic block per controllare che l'utilizzo dell'istruzione sia
-    //     // utilizzata al di fuori del loop. (successori delle uscite del loop).
-    //     // - ALTERNATIVA CHE NON FUNZIONA: Il prof sconsiglia di risolvere il
-    //     // problema controllando che il blocco che contiene l'uso sia dominato
-    //     // dalle uscite del loop, perchè da dei problemi quando un'uscita è
-    //     // condivisa da più branch entranti.
-    //     // Le definizioni dominano sempre i propri usi. Allora perchè non va bene?
-    //     // - ALTERNATIVA CORRENTE (NON ESATTA): Il problema consiste nel fatto
-    //     // che l'uso potrebbe essere definito anche prima del loop; per questo
-    //     // motivo ci sarebbe bisogno di controllare che il basic block che
-    //     // contiene l'uso non sia solo esterno al loop, ma che venga anche dopo
-    //     // di esso, non prima. Ma questo ci riporta al problema risolvibile
-    //     // tramite la soluzione del prof.
-
-    //     if (!L.contains(UserInst->getParent()))
-    //       return false;
+        if (!L.contains(UserInst->getParent()))
+          return false;
     return true;
   }
 
@@ -117,16 +116,14 @@ namespace graboidpasses::licm {
 
       if (L.contains(UBB)) {
 
-        if (PBB == UBB)
-          if (UserInst->comesBefore(I)) {
-            return false;
-          }
-
-        if (!DT.dominates(PBB, UBB)) {
-          // TODO: se l'utilizzo e' una phi allora sicuramente l'header domina
-          // dove viene definita l'istruzione.
+        if (PBB == UBB && UserInst->comesBefore(I))
           return false;
-        }
+
+        // Se il Basic Block padre della definizione domina quello dell'
+        // utilizzatore e l'utilizzatore non è un'istruzione di tipo phi,
+        // allora restituisce falso; altrimenti restituisce vero.
+        if (!DT.dominates(PBB, UBB) && !isa<PHINode>(UserInst))
+          return false;
 
       }
 
@@ -160,7 +157,6 @@ namespace graboidpasses::licm {
 
       bool isCandidate = assignedOnce && definedBeforeUse &&
                         (dominatesExits || deadOutsideLoop);
-
 
       if (isCandidate) {
         candidateInstructionSet.insert(I);
