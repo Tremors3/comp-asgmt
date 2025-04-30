@@ -2,7 +2,7 @@
 
 # Funciton that prepare the environment
 export_variables() {
-    
+
     unset ROOT_LABS_TMP
     unset LLVM_DIR_TMP
 
@@ -94,7 +94,7 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="sample"
+SOURCE_FILE="licm-test"
 IS_LL_FILE=false
 
 # [EDIT] Assignment
@@ -106,9 +106,9 @@ SOURCE_FILE_PATH="$SOURCES_DIR/$SOURCE_FILE"
 # Building
 
 cd "$BUILD_DIR"
-echo "Would you run cmake? (y/n)"
+echo "Would you run cmake? (Y/n)"
 read runcmake
-if [ "${runcmake}" = "y" ]; then
+if [ "${runcmake}" = "y" ] || [ "${runcmake}" = "Y" ] || [ "${runcmake}" = "" ]; then
     echo "Running cmake..."
     cmake -DLT_LLVM_INSTALL_DIR=$LLVM_DIR "$MODULES_DIR"
 fi
@@ -121,7 +121,7 @@ cd ..
 if [ "$IS_LL_FILE" = false ]; then
     # Running clang with optnone flag disabled for .ll generation
     clang -Xclang -disable-O0-optnone -O0 -S -emit-llvm -c "${SOURCE_FILE_PATH}.c" -o "${SOURCE_FILE_PATH}.ll"
-    
+
     # Converting LLVM IR to SSA form using the mem2reg pass
     opt -p mem2reg "${SOURCE_FILE_PATH}.ll" -o "${SOURCE_FILE_PATH}.bc"
 
@@ -134,7 +134,7 @@ execute_passes() {
     opt -load-pass-plugin "${BUILD_DIR}/lib${ASSIGNMENT}.so" \
         -passes="$1" "${SOURCE_FILE_PATH}.ll" \
         -o "${SOURCE_FILE_PATH}.optimized.bc"
-    
+
     # Running llvm-dis to convert .bc to .ll
     llvm-dis "${SOURCE_FILE_PATH}.optimized.bc" -o "${SOURCE_FILE_PATH}.optimized.ll"
 }
@@ -142,5 +142,6 @@ execute_passes() {
 echo "Running opt to apply pass..."; echo
 
 execute_passes "-licm-pass"
+execute_passes "licm"
 
 echo; echo "Build and processing completed."
