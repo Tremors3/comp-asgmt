@@ -9,22 +9,54 @@
 //==============================================================================
 #include "FilterCandidateAnalysis.hpp"
 #include "Utils.hpp"
-#include <llvm/IR/Instructions.h>
 
 namespace graboidpasses::licm {
+
+  /**
+   * Filtra le istruzioni loop-invariant per determinare se sono
+   * candidate a essere spostate all'esterno del loop.
+   */
+  void FilterCandidateAnalysis::filterCandidates() {
+
+    for (Instruction* I : *invariantInstructions) {
+
+      bool assignedOnce     = \
+        FilterCandidateAnalysis::isValueAssignedOnce(I);
+
+      bool definedBeforeUse = \
+        FilterCandidateAnalysis::isDefinedBeforeUse(I);
+
+      bool dominatesExits   = \
+        FilterCandidateAnalysis::instructionDominatesAllExits(I);
+
+      bool deadOutsideLoop  = \
+        FilterCandidateAnalysis::isVariableDeadOutsideLoop(I);
+
+      bool isCandidate = assignedOnce && definedBeforeUse &&
+                        (dominatesExits || deadOutsideLoop);
+
+      if (isCandidate) {
+        candidateInstructions.insert(I);
+
+        utils::printInstruction(
+          "\033[1;38:5:214m[LICM-FILTERING] Movable Instruction:\033[0m\t"
+          "\033[0;38:5:214m", I
+        );  // DEBUG
+      }
+    }
+  }
 
   /**
    * Restituisce true se l'istruzione I si trova in un blocco che
    * domina tutte le uscite del loop L, altrimenti false.
    */
-  bool FilterCandidateAnalysis::instructionDominatesAllExits(
-    Instruction *I, Loop &L, DominatorTree &DT)
+  bool FilterCandidateAnalysis::instructionDominatesAllExits(Instruction *I)
   {
     SmallVector<BasicBlock *, 0> ExitBlocks;
-    L.getExitBlocks(ExitBlocks);
+    loop->getExitBlocks(ExitBlocks);
 
     for (BasicBlock *Exit : ExitBlocks)
-      if (!DT.dominates(I->getParent(), Exit))
+      if (!domtree->dominates(I->getParent(), Exit))
         return false;
 
     return true;
@@ -35,9 +67,7 @@ namespace graboidpasses::licm {
    * tutti gli user di I sono all'interno del loop, allora I è morta al di
    * fuori del loop.
    */
-  bool FilterCandidateAnalysis::isVariableDeadOutsideLoop(
-    Instruction *I, Loop &L)
-  {
+  bool FilterCandidateAnalysis::isVariableDeadOutsideLoop(Instruction *I) {
     // SmallVector<BasicBlock *, 0> ExitBlocks;
     // L.getExitBlocks(ExitBlocks);
     // for (BasicBlock *Exit : ExitBlocks)
@@ -62,7 +92,7 @@ namespace graboidpasses::licm {
         // di esso, non prima. Ma questo ci riporta al problema risolvibile
         // tramite la soluzione del prof.
 
-        if (!L.contains(UserInst->getParent()))
+        if (!loop->contains(UserInst->getParent()))
           return false;
     return true;
   }
@@ -74,7 +104,7 @@ namespace graboidpasses::licm {
    * Altrimenti, se anche solo una è una costante oppure una definizione
    * interna al loop, allora I è assegnato più di una volta.
    */
-  bool FilterCandidateAnalysis::isValueAssignedOnce(Instruction *I, Loop &L) {
+  bool FilterCandidateAnalysis::isValueAssignedOnce(Instruction *I) {
 
     // CONSIGLIO PROF TODO: Il prof consiglia di rimuovere questa funzione
     // perchè inutile. Dobbiamo ragionare sulla possibilità che due definizioni
@@ -83,7 +113,7 @@ namespace graboidpasses::licm {
 
     for (User *User : I->users()) {
 
-      if (isa<PHINode>(User) && L.contains(dyn_cast<Instruction>(User))) {
+      if (isa<PHINode>(User) && loop->contains(dyn_cast<Instruction>(User))) {
         PHINode *phi = dyn_cast<PHINode>(User);
 
         for (unsigned j = 0; j < phi->getNumIncomingValues(); ++j) {
@@ -93,7 +123,7 @@ namespace graboidpasses::licm {
             return false;
 
           if (Instruction *ReachingDefInst = dyn_cast<Instruction>(ReachingDef))
-            if (ReachingDefInst != I && L.contains(ReachingDefInst))
+            if (ReachingDefInst != I && loop->contains(ReachingDefInst))
               return false;
         }
       }
@@ -105,16 +135,14 @@ namespace graboidpasses::licm {
   /**
    * Restituisce true se l'istruzione I è definita prima di essere usata.
    */
-  bool FilterCandidateAnalysis::isDefinedBeforeUse(
-    Instruction *I, Loop &L, DominatorTree &DT)
-  {
+  bool FilterCandidateAnalysis::isDefinedBeforeUse(Instruction *I) {
     BasicBlock *PBB = I->getParent();
 
     for (User *U : I->users()) {
       Instruction *UserInst = dyn_cast<Instruction>(U);
       BasicBlock *UBB = UserInst->getParent();
 
-      if (L.contains(UBB)) {
+      if (loop->contains(UBB)) {
 
         if (PBB == UBB && UserInst->comesBefore(I))
           return false;
@@ -122,7 +150,7 @@ namespace graboidpasses::licm {
         // Se il Basic Block padre della definizione domina quello dell'
         // utilizzatore e l'utilizzatore non è un'istruzione di tipo phi,
         // allora restituisce falso; altrimenti restituisce vero.
-        if (!DT.dominates(PBB, UBB) && !isa<PHINode>(UserInst))
+        if (!domtree->dominates(PBB, UBB) && !isa<PHINode>(UserInst))
           return false;
 
       }
@@ -130,43 +158,6 @@ namespace graboidpasses::licm {
     }
 
     return true;
-  }
-
-  /**
-   * Filtra le istruzioni loop-invariant per determinare se sono
-   * candidate a essere spostate all'esterno del loop.
-   */
-  void FilterCandidateAnalysis::filterInvariantInstructions(
-    Loop &L, DominatorTree &DT,
-    std::set<Instruction*> &invariantInstructionSet,
-    std::set<Instruction*> &candidateInstructionSet)
-  {
-    for (Instruction* I : invariantInstructionSet) {
-
-      bool assignedOnce     = \
-        FilterCandidateAnalysis::isValueAssignedOnce(I, L);
-
-      bool definedBeforeUse = \
-        FilterCandidateAnalysis::isDefinedBeforeUse(I, L, DT);
-
-      bool dominatesExits   = \
-        FilterCandidateAnalysis::instructionDominatesAllExits(I, L, DT);
-
-      bool deadOutsideLoop  = \
-        FilterCandidateAnalysis::isVariableDeadOutsideLoop(I, L);
-
-      bool isCandidate = assignedOnce && definedBeforeUse &&
-                        (dominatesExits || deadOutsideLoop);
-
-      if (isCandidate) {
-        candidateInstructionSet.insert(I);
-
-        utils::printInstruction(
-          "\033[1;38:5:214m[LICM-FILTERING] Movable Instruction:\033[0m\t"
-          "\033[0;38:5:214m", I
-        );  // DEBUG
-      }
-    }
   }
 
 } // namespace graboidpasses::licm

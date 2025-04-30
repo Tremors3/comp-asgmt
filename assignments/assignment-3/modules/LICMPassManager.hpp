@@ -20,22 +20,24 @@ using namespace llvm;
 
 namespace graboidpasses::licm {
 
-  struct LicmPassManager: PassInfoMixin<LicmPassManager> {
-
-  private:
-    bool processLoop(Loop &L, DominatorTree &DT);
-
-    bool iterateSubLevelLoops(Loop &L, DominatorTree &DT);
-
-    bool iterateTopLevelLoops(LoopInfo &LI, DominatorTree &DT);
-
-/*----------------------------------------------------------------------------*/
-
-  private:
-    bool runOnFunction(Function &F, FunctionAnalysisManager &AM);
-
+  class LicmPassManager {
   public:
-    PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+    LicmPassManager(LoopInfo* LI, DominatorTree *DT)
+      : loopinfo(LI), domtree(DT) {}
+
+    void startPass();
+    bool hasTransformed() const { return onePerformed; }
+
+  private:
+    LoopInfo *loopinfo;
+    DominatorTree *domtree;
+    bool onePerformed = false;
+
+    void processLoop(Loop &L);
+    void iterateTopLevelLoops();
+    void iterateSubLevelLoops(Loop &L);
+
+    void setTransformed() { onePerformed = true; }
   };
 
 } // namespace graboidpasses::licm

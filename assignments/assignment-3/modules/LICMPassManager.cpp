@@ -16,83 +16,58 @@ using namespace llvm;
 
 namespace graboidpasses::licm {
 
+  void LicmPassManager::startPass() {
+    return iterateTopLevelLoops();
+  }
+
+  /**
+   * Visita iterativa (sequenziale) sui loops di livello più alto (top-loops).
+   */
+  void LicmPassManager::iterateTopLevelLoops() {
+    for (auto &L : loopinfo->getTopLevelLoops())
+      iterateSubLevelLoops(*L);
+  }
+
+  /**
+   * Visita ricorsiva (DFS-Postorder) sui loops annidati (sub-loops).
+   */
+  void LicmPassManager::iterateSubLevelLoops(Loop &L) {
+    for (auto &nested : L.getSubLoops())
+      iterateSubLevelLoops(*nested);
+    processLoop(L);
+  }
+
   /**
    * Per ciascun loop, esegue l'analisi per determinare le istruzioni
    * loop-invariant. In seguito filtra le istruzioni loop-invariant
    * per determinare se sono candidate a essere spostate all'esterno
    * del loop.
    */
-  bool LicmPassManager::processLoop(Loop &L, DominatorTree &DT) {
+  void LicmPassManager::processLoop(Loop &L) {
     outs() << "\033[1;38:5:255m[LICM] Run on loop at:\033[0m "
            << "\033[0;38:5:255m" << L.getLoopID()
            << ", Depth: " << L.getLoopDepth() << "\033[0m\n";  // DEBUG
 
-    std::set<Instruction*> candidateInstructionSet, invariantInstructionSet;
+    std::set<Instruction*> candidateInstructions, invariantInstructions;
 
     LoopInvariantAnalysis lia(&L);
     lia.analyzeLoop();
-    invariantInstructionSet = lia.getInvariantInstructions();
+    invariantInstructions = lia.getInvariantInstructions();
 
-    if (!invariantInstructionSet.empty()) {
-      FilterCandidateAnalysis fca;
-      fca.filterInvariantInstructions(
-        L, DT, invariantInstructionSet, candidateInstructionSet);
+    if (!invariantInstructions.empty()) {
+      FilterCandidateAnalysis fca(&L, domtree, &invariantInstructions);
+      fca.filterCandidates();
+      candidateInstructions = fca.getCandidates();
     }
 
-    bool Transformed = false;
-    if (!candidateInstructionSet.empty()) {
-      CodeMotion cm;
-      Transformed |= cm.moveInstructions(L, candidateInstructionSet);
+    if (!candidateInstructions.empty()) {
+      CodeMotion cm(&L, &candidateInstructions);
+      cm.executeMotion();
+      if(cm.hasOneMotionPerformed())
+        setTransformed();
     }
 
     outs() << '\n';
-
-    return Transformed;
-  }
-
-  /**
-   * Visita ricorsiva (DFS-Postorder) sui loops annidati (sub-loops).
-   */
-  bool LicmPassManager::iterateSubLevelLoops(Loop &L, DominatorTree &DT) {
-    bool Transformed = false;
-
-    for (auto &nested : L.getSubLoops())
-      Transformed |= LicmPassManager::iterateSubLevelLoops(*nested, DT);
-
-    Transformed |= LicmPassManager::processLoop(L, DT);
-
-    return Transformed;
-  }
-
-  /**
-   * Visita iterativa (sequenziale) sui loops di livello più alto (top-loops).
-   */
-  bool LicmPassManager::iterateTopLevelLoops(LoopInfo &LI, DominatorTree &DT) {
-    bool Transformed = false;
-
-    for (auto &L : LI.getTopLevelLoops())
-      Transformed |= LicmPassManager::iterateSubLevelLoops(*L, DT);
-
-    return Transformed;
-  }
-
-  /*--------------------------------------------------------------------------*/
-
-  bool LicmPassManager::runOnFunction(Function &F, FunctionAnalysisManager &AM){
-    outs() << "\033[1;38:5:40m[LICM] Run on function:\033[0m "
-           << "\033[0;38:5:40m" << F.getName() << "\033[0m\n";  // DEBUG
-
-    LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
-    DominatorTree &DT = AM.getResult<DominatorTreeAnalysis>(F);
-
-    return LicmPassManager::iterateTopLevelLoops(LI, DT);
-  }
-
-  PreservedAnalyses LicmPassManager::run(
-    Function &F, FunctionAnalysisManager &AM)
-  {
-    return (LicmPassManager::runOnFunction(F, AM) ?
-      PreservedAnalyses::none() : PreservedAnalyses::all());
   }
 
 } // namespace graboidpasses::licm

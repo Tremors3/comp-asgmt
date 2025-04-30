@@ -19,18 +19,24 @@ using namespace llvm;
 
 namespace graboidpasses::licm {
 
-  struct CodeMotion {
+  class CodeMotion {
+  public:
+    CodeMotion(Loop *L, std::set<Instruction*> *CI)
+      : loop(L), candidateInstructions(CI) {};
+
+    void executeMotion();
+    bool hasOneMotionPerformed() const { return onePerformed; }
 
   private:
-    Instruction *getPreHeaderLastInstruction(Loop &L);
+    Loop *loop;
+    bool onePerformed = false;
+    std::set<Instruction*> *candidateInstructions;
 
-    bool moveBeforeLoop(Instruction *I, Loop &L);
+    bool moveBeforeLoop(Instruction *I);
+    Instruction *getPreHeaderLastInstruction();
 
-  public:
-    bool moveInstructions(Loop &L,
-      std::set<Instruction*> &candidateInstructionSet);
-  };
+    void setOneMotionPerformed() { onePerformed = true; }
 
-} // namespace graboidpasses::licm
-
+  }; // namespace graboidpasses::licm
+}
 #endif // GRABOID_CODE_MOTION_H

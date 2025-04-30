@@ -15,6 +15,7 @@
 #include <llvm/IR/Dominators.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Instruction.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <bits/stdc++.h>
 
@@ -22,24 +23,28 @@ using namespace llvm;
 
 namespace graboidpasses::licm {
 
-  struct FilterCandidateAnalysis {
-  private:
-    bool instructionDominatesAllExits(Instruction *I, Loop &L,
-        DominatorTree &DT);
-
-    bool isVariableDeadOutsideLoop(Instruction *I, Loop &L);
-
-    bool isValueAssignedOnce(Instruction *I, Loop &L);
-
-    bool isDefinedBeforeUse(Instruction *I, Loop &L, DominatorTree &DT);
+  class FilterCandidateAnalysis {
 
   public:
-    void filterInvariantInstructions(
-      Loop &L, DominatorTree &DT,
-      std::set<Instruction*> &invariantInstructionSet,
-      std::set<Instruction*> &candidateInstructionSet
-    );
+    FilterCandidateAnalysis(Loop *L, DominatorTree *DT, std::set<Instruction*> *II)
+      : loop(L), domtree(DT), invariantInstructions(II) {}
 
+    void filterCandidates();
+
+    const std::set<Instruction*> &getCandidates() const {
+      return candidateInstructions;
+    }
+
+  private:
+    Loop *loop;
+    DominatorTree *domtree;
+    std::set<Instruction*> *invariantInstructions;
+    std::set<Instruction*> candidateInstructions;
+
+    bool instructionDominatesAllExits(Instruction *I);
+    bool isVariableDeadOutsideLoop(Instruction *I);
+    bool isValueAssignedOnce(Instruction *I);
+    bool isDefinedBeforeUse(Instruction *I);
   };
 
 } // namespace graboidpasses::licm

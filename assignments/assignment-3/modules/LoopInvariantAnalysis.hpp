@@ -8,8 +8,8 @@
 // License: GPL3
 //==============================================================================
 #pragma once
-#ifndef GRABOID_LICM_LOOP_INVARIANT_ANALYSIS_H
-#define GRABOID_LICM_LOOP_INVARIANT_ANALYSIS_H
+#ifndef GRABOID_LOOP_INVARIANT_ANALYSIS_H
+#define GRABOID_LOOP_INVARIANT_ANALYSIS_H
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
 #include <llvm/Analysis/LoopInfo.h>
@@ -42,4 +42,4 @@ namespace graboidpasses::licm {
 
 } // namespace graboidpasses::licm
 
-#endif // GRABOID_LICM_LOOP_INVARIANT_ANALYSIS_H
+#endif // GRABOID_LOOP_INVARIANT_ANALYSIS_H
