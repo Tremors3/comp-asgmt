@@ -73,8 +73,11 @@ namespace graboidpasses::licm {
         return false;
 
       if (!visited.count(I))
+        // L'istruzione che definisce l'operando non e' stata ancora visitata.
+        // La visitiamo per decretare che sia loop-invariant, o meno.
         return isInstrLoopInvariant(I);
 
+      // L'istruzione che definisce l'operando è già stata visitata.
       return invariantInstructions.count(I);
     }
 
