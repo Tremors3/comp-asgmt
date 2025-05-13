@@ -94,7 +94,7 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="licm-test"
+SOURCE_FILE="lf-guard-tests"
 IS_LL_FILE=false
 
 # [EDIT] Assignment
@@ -142,6 +142,6 @@ execute_passes() {
 echo "Running opt to apply pass..."; echo
 
 execute_passes "-licm-pass"
-execute_passes "licm"
+# execute_passes "licm"
 
 echo; echo "Build and processing completed."
