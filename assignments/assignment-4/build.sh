@@ -94,11 +94,11 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="lf-guard-tests"
+SOURCE_FILE="lf-adjacent-test"
 IS_LL_FILE=false
 
 # [EDIT] Assignment
-ASSIGNMENT="LoopInvariantCodeMotion"
+ASSIGNMENT="LoopFusion"
 
 # Source File Path
 SOURCE_FILE_PATH="$SOURCES_DIR/$SOURCE_FILE"
@@ -141,7 +141,6 @@ execute_passes() {
 
 echo "Running opt to apply pass..."; echo
 
-execute_passes "-licm-pass"
-# execute_passes "licm"
+execute_passes "-loop-fusion-pass"
 
 echo; echo "Build and processing completed."
