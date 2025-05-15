@@ -94,7 +94,7 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="lf-guard-auto-2"
+SOURCE_FILE="lf-guard-auto-1"
 IS_LL_FILE=true
 #IS_LL_FILE=false
 
