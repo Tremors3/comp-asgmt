@@ -7,6 +7,7 @@
 //
 // License: GPL3
 //==============================================================================
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
@@ -51,6 +52,68 @@ public:
   static bool isRequired() { return true; }
 
 private:
+
+  bool isLoopExitBlock(Loop *L, BasicBlock *ExitToCheck) const {
+    SmallVector<BasicBlock*, 1> ExitBlocks;
+    L->getExitBlocks(ExitBlocks);
+    for (BasicBlock *Exit : ExitBlocks)
+      if (ExitToCheck == Exit)
+        return true;
+    return false;
+  }
+
+  bool checkGuardSuccessors(Loop *L, BasicBlock *First, BasicBlock *Second, BasicBlock *EntryBlock) const {
+    // Checking that one of the branch successors is the entry block
+    // (header/preheader) of the loop. And the other one is an exit
+    // block of the loop.
+    return (First == EntryBlock && isLoopExitBlock(L, Second)); // Second == L->getExitBlock()
+  }
+
+  BasicBlock* getLoopGuard(Loop *L) const {
+
+    // Getting the preheader, if it exists. If it there isn't, use the header.
+    // Note: a loop can be guarded even if it doesn't have a preheader.
+    BasicBlock *EntryBlock = L->getLoopPreheader();
+    if (EntryBlock == nullptr)
+      EntryBlock = L->getHeader();
+
+    // We count how many external predecessors the entry block (header/preheader)
+    // has. To be guarded, a loop must have exactly one external predecessor.
+    unsigned externalPreds = 0;
+
+    // Checking the predecessors of the loop entry block (header/preheader).
+    for (BasicBlock *pred : predecessors(EntryBlock)) {
+      if (L->contains(pred))
+        continue; // the predecessor is inside the loop (a latch).
+
+      if (externalPreds++)
+        break; // already found an external predecessor.
+
+      // If the external predecessor ends with a conditional branch instruction
+      // it could be a guard.
+      if (BranchInst *br = dyn_cast<BranchInst>(pred->getTerminator())) {
+
+        if (!br->isConditional())
+          continue; // the guard branch inst must be conditional
+
+        // One of the successors must redirect to the header block,
+        // the other one must go at the exit of the current loop.
+        BasicBlock *succ1 = br->getSuccessor(0);
+        BasicBlock *succ2 = br->getSuccessor(1);
+
+        // Checking that one successor points to the loop entry block
+        // (header/preheader). And the second successor points at an
+        // exit block.
+        if (checkGuardSuccessors(L, succ1, succ2, EntryBlock) ||
+            checkGuardSuccessors(L, succ2, succ1, EntryBlock))
+          return pred;
+      }
+
+    }
+
+    return nullptr;
+  }
+
   bool adjacentAnalysis(Loop *FirstLoop, Loop *SecondLoop) {
     outs() << "Current Couple: \n";
     outs() << "\033[1;38:5:255m[LFP-ADJ] First loop:\033[0m "
@@ -60,68 +123,9 @@ private:
            << "\033[0;38:5:255m" << SecondLoop->getLoopID()
            << ", Depth: " << SecondLoop->getLoopDepth() << "\033[0m\n"; // DEBUG
 
+    // Validation
     if (FirstLoop == nullptr || SecondLoop == nullptr)
       return false;
-
-    // Loops must have only one exit block
-    SmallVector<BasicBlock *, 1> FL_ExitBlocks;
-    SmallVector<BasicBlock *, 1> SL_ExitBlocks;
-    FirstLoop->getExitBlocks(FL_ExitBlocks);
-    SecondLoop->getExitBlocks(SL_ExitBlocks);
-    if (FL_ExitBlocks.size() != 1 || SL_ExitBlocks.size() != 1)
-      return false;
-
-    // Basic Blocks mustn't be null
-    BasicBlock *FL_ExitBlock = FirstLoop->getExitBlock();
-    BasicBlock *SL_ExitBlock = SecondLoop->getExitBlock();
-    BasicBlock *SL_Preheader = SecondLoop->getLoopPreheader();
-    if (FL_ExitBlock == nullptr || SL_Preheader == nullptr ||
-        SL_Preheader == nullptr)
-      return false;
-
-    // Case 1: The Preheader of the second loop
-    // is the exit block of first loop
-    if (FL_ExitBlock == SL_Preheader) {
-      return true;
-    }
-
-    // Getting the successor of the first loop exit
-    BasicBlock *FL_ExitSuccessor = FL_ExitBlock->getSingleSuccessor();
-
-    // Case 2: The Preheader of the second loop is
-    // the successor of the exit block of first loop
-    if (FL_ExitBlock == SL_Preheader) {
-
-      // TODO: Check for instructions in the second loop preheader
-
-      return true;
-    }
-
-    // Case 3: The Guard of the second loop is
-    // the Exit block is the guard or the prehader
-    bool isGuarded = false; // second loop is guarded
-    for (BasicBlock *Succ : successors(FL_ExitSuccessor)) {
-      if (Succ == SL_Preheader || Succ == SL_ExitBlock) {
-        isGuarded = true;
-      } else {
-        isGuarded = false;
-        break;
-      }
-    }
-    if (isGuarded) { // true if the second loop is guarded
-
-      // TODO: Check for instructions in the second loop preheader
-
-      return true;
-    }
-
-    // che succede
-    // Recursive search on...
-    // <llvm/Analysis/CFG.h>
-    // if (isPotentiallyReachable(FL_ExitBlock, SL_Preheader, nullptr, &DT)) {
-    //   // Controllare i BB intermedi per istruzioni non volute
-    //   return true;
-    // }
 
     return false;
   }
@@ -138,11 +142,14 @@ private:
     Loop *FL = *LoopVect.begin();
     Loop *SL = *(++LoopVect.begin());
 
-    bool result = adjacentAnalysis(FL, SL) || adjacentAnalysis(SL, FL);
+    // bool result = adjacentAnalysis(FL, SL) || adjacentAnalysis(SL, FL);
+    // outs() << "-- Are Adjacent? " << result << '\n';
 
-    outs() << "-- Are Adjacent? " << result << '\n';
+    BasicBlock *first = getLoopGuard(FL), *second = getLoopGuard(SL);
+    outs() << "First Loop guarded?: " << first << '\n';
+    outs() << "Secon Loop guarded?: " << second << '\n';
 
-    return result;
+    return false;
   }
 };
 
