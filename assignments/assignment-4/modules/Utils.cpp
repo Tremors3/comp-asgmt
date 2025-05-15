@@ -16,13 +16,6 @@ void debug(std::string text, std::string pre, std::string post,
   outs() << pre << text << post << terminator; // DEBUG
 }
 
-void debugInst(std::string text, Instruction *I, std::string pre,
-               std::string post, char terminator) {
-  outs() << pre << text;
-  I->print(outs());
-  outs() << post << terminator; // DEBUG
-}
-
 void debugYesNo(std::string text, bool condition, std::string trueCondition,
                 std::string falseCondition, std::string pre, std::string post,
                 char terminator) {

@@ -11,7 +11,9 @@
 #ifndef GRABOID_UTILS_H
 #define GRABOID_UTILS_H
 #include <bits/stdc++.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/Analysis/LoopInfo.h>
 
 using namespace llvm;
 
@@ -19,9 +21,6 @@ namespace graboidpasses::utils {
 
 void debug(std::string text, std::string pre = "", std::string post = "",
            char terminator = '\n');
-
-void debugInst(std::string text, Instruction *I, std::string pre = "",
-               std::string post = "", char terminator = '\n');
 
 void debugYesNo(std::string text, bool condition,
                 std::string trueCondition = "Yes",
