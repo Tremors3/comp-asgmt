@@ -7,6 +7,8 @@
 //
 // License: GPL3
 //==============================================================================
+#include "llvm/Analysis/PostDominators.h"
+#include "llvm/IR/Dominators.h"
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/LoopInfo.h>
@@ -16,10 +18,13 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/PassManager.h>
 #include <llvm/IR/TrackingMDRef.h>
+#include <llvm/IR/Value.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
+
+#include "Utils.hpp"
 
 using namespace llvm;
 
@@ -77,7 +82,7 @@ private:
             isLoopExitBlock(L, Second)); // Second == L->getExitBlock()
   }
 
-  BasicBlock *getLoopGuard(Loop *L) const {
+  BasicBlock *customLoopGuardRetrieval(Loop *L) const {
     // Important: The function does not assume that the loop is in simplified
     // form
 
@@ -128,32 +133,126 @@ private:
     return nullptr;
   }
 
-  bool adjacentAnalysis(Loop *FirstLoop, Loop *SecondLoop) {
+  /**
+   * Returns the guard of the loop if it exists
+   */
+  BasicBlock *getLoopGuard(Loop *L, bool custom = false) const {
 
-    BasicBlock *first = getLoopGuard(FirstLoop),
-               *second = getLoopGuard(SecondLoop);
+    if (custom)
+      // Using custom guard getter
+      return customLoopGuardRetrieval(L);
 
-    outs() << "First Loop guarded?:  " << (first != nullptr ? "Yes" : "No")
-           << '\n';
-    outs() << "Second Loop guarded?: " << (second != nullptr ? "Yes" : "No")
-           << '\n';
+    if (BranchInst *br = L->getLoopGuardBranch())
+      // Using predefined guard getter
+      return br->getParent();
 
-    if (first != nullptr && second != nullptr) {
-      // both are guarded
-      outs() << "Both are guarded\n";
-    } else if (first == nullptr && second == nullptr) {
-      // both are unguarded
-      outs() << "Both are unguarded\n";
-    } else {
-      // one is guarded and the other is not
-      outs() << "One is guarded and the other is not\n";
-      return false;
+    return nullptr;
+  }
+
+  /**
+   * Check if the first loop is adjacent to the second one
+   */
+  bool isFirstNextToSecond(Loop *FirstLoop, Loop *SecondLoop) {
+    BasicBlock *FL_ExitSucc = FirstLoop->getExitBlock()->getNextNode();
+    BasicBlock *SL_Preheader = SecondLoop->getLoopPreheader();
+
+    // Case 1:  1st loop exit successor == 2nd loop header
+    if (FL_ExitSucc == SecondLoop->getHeader())
+      return true;
+
+    // Case 2:  1st loop exit successor == 2nd loop preheader
+    if (FL_ExitSucc == SL_Preheader) {
+
+      // Checking for unwanted instructions in the preheader
+      for (Instruction &I : *SL_Preheader)
+        if (&I != SL_Preheader->getTerminator())
+          return false;
+
+      return true;
     }
 
+    // Case 3:  1st loop exit successor == another block
     return false;
   }
 
-  bool analyzeCouple(Loop *FirstLoop, Loop *SecondLoop) {
+  /**
+   * Check if the first guard points to the second guard
+   */
+  bool firstGuardPointsSecondGuard(BasicBlock *firGuard, BasicBlock *secGuard) {
+    for (auto FG_Successor : successors(firGuard)) {
+      if (secGuard == FG_Successor)
+        return true;
+    }
+    return false;
+  }
+
+  /**
+   * Get the guard branch condition
+   */
+  Value *getGuardBranchCondition(BasicBlock *BB) {
+    if (auto *branchInst = dyn_cast<BranchInst>(BB->getTerminator()))
+      if (branchInst->isConditional())
+        return branchInst->getCondition();
+    return nullptr;
+  }
+
+  /**
+   * Check if both guard condition are equal by comparing every component
+   * of the condition
+   */
+  bool areGuardConditionEquivalent(BasicBlock *firGuard, BasicBlock *secGuard) {
+    if (auto *firCond = dyn_cast<ICmpInst>(getGuardBranchCondition(firGuard))) {
+      if (auto *secCond =
+              dyn_cast<ICmpInst>(getGuardBranchCondition(secGuard))) {
+        if (firCond->getPredicate() == secCond->getPredicate() &&
+            firCond->getOperand(0) == secCond->getOperand(0) &&
+            firCond->getOperand(1) == secCond->getOperand(1)) {
+          utils::debug("Both guards have the same condition");
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Runs adjacency analysis
+   */
+  bool adjacentAnalysis(Loop *FirstLoop, Loop *SecondLoop,
+                        bool customGetter = false) {
+
+    utils::debugYesNo("Which guard getter:  \t", customGetter, "Custom",
+                      "Predefined");
+
+    BasicBlock *firGuard = getLoopGuard(FirstLoop, customGetter),
+               *secGuard = getLoopGuard(SecondLoop, customGetter);
+
+    utils::debugYesNo("First Loop guarded?: \t", firGuard);
+    utils::debugYesNo("Second Loop guarded?:\t", secGuard);
+
+    // both are guarded
+    if (firGuard != nullptr && secGuard != nullptr) {
+      utils::debug("Both are guarded");
+      return firstGuardPointsSecondGuard(firGuard, secGuard) &&
+             areGuardConditionEquivalent(firGuard, secGuard);
+    }
+
+    // both are unguarded
+    if (firGuard == nullptr && secGuard == nullptr) {
+      utils::debug("Both are unguarded");
+      return isFirstNextToSecond(FirstLoop, SecondLoop);
+    }
+
+    // one is guarded
+    utils::debug("Only one is guarded");
+    return false;
+  }
+
+  /**
+   * Analyze two loops
+   */
+  bool analyzeCouple(Loop *FirstLoop, Loop *SecondLoop, DominatorTree *DT,
+                     PostDominatorTree *PDT) {
     outs() << "\033[1;38:5:255m[LFP-ADJ] First loop:\033[0m "
            << "\033[0;38:5:255m" << FirstLoop->getLoopID()
            << ", Depth: " << FirstLoop->getLoopDepth() << "\033[0m\n"; // DEBUG
@@ -161,31 +260,51 @@ private:
            << "\033[0;38:5:255m" << SecondLoop->getLoopID()
            << ", Depth: " << SecondLoop->getLoopDepth() << "\033[0m\n"; // DEBUG
 
-    if (!FirstLoop->isLoopSimplifyForm() || !SecondLoop->isLoopSimplifyForm())
+    if (!FirstLoop || !SecondLoop) {
+      utils::debug("At least one of the two loops is null");
       return false;
+    }
 
-    return adjacentAnalysis(FirstLoop, SecondLoop);
+    if (!FirstLoop->isLoopSimplifyForm() || !SecondLoop->isLoopSimplifyForm()) {
+      utils::debug("At least one of the two loops isn't in simplify form");
+      return false;
+    }
+
+    bool isCoupleAdjacent = adjacentAnalysis(FirstLoop, SecondLoop);
+    utils::debugYesNo("Is couple Adjacent?:\t", isCoupleAdjacent);
+
+    bool isCoupleCFE = areControlFlowEquivalent(FirstLoop, SecondLoop, DT, PDT);
+    utils::debugYesNo("Is couple CFE?: \t", isCoupleCFE);
+
+    return isCoupleAdjacent && isCoupleCFE;
+  }
+
+  /**
+   *
+   */
+  bool areControlFlowEquivalent(Loop *FirstLoop, Loop *SecondLoop,
+                                DominatorTree *DT, PostDominatorTree *PDT) {
+    return (DT->dominates(FirstLoop->getHeader(), SecondLoop->getHeader()) &&
+            PDT->dominates(SecondLoop->getHeader(), FirstLoop->getHeader()));
   }
 
   bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
     outs() << "\033[1;38:5:40m[LF] Run on function:\033[0m "
            << "\033[0;38:5:40m" << F.getName() << "\033[0m\n"; // DEBUG
-    // Stop Indent
 
     LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
+    DominatorTree &DT = AM.getResult<DominatorTreeAnalysis>(F);
+    PostDominatorTree &PDT = AM.getResult<PostDominatorTreeAnalysis>(F);
 
     const std::vector<Loop *> LoopVect = LI.getTopLevelLoops();
 
     Loop *FL = *(++LoopVect.begin());
     Loop *SL = *LoopVect.begin();
 
-    bool result = analyzeCouple(FL, SL);
-
-    outs() << "-- Are Adjacent? " << result << '\n';
+    bool isCoupleValid = analyzeCouple(FL, SL, &DT, &PDT);
 
     return false;
   }
-
 };
 
 } // namespace graboidpasses::lf
