@@ -21,17 +21,22 @@
 using namespace llvm;
 
 /*
-La Guard del secondo Loop è resa inutile dalla Guard del primo Loop.
 
-Dopo la verifica che entrambi i loop hanno lo stesso trip count:
+### PUNTO PRIMO - ADJACENCY
 
-1. Se N = 0:
-La Guard di Loop1 salta l'esecuzione del suo corpo e, se Loop2 è fuso, anche
-quello di Loop2. Quindi la Guard di Loop2 non serve più.
+1. Se il primo loop è guarded allora non possiamo fonderlo con un secondo senza guard perchè il corpo del secondo loop non viene per forza saltato se viene saltato il corpo del primo loop.
 
-2. Se N > 0: Entrambe le Guard valutano a true, ma non hanno effetto perché i
-loop verranno comunque eseguiti. Anche in questo caso, la seconda Guard è
-inutile.
+2. Possiamo fondere i loop solamente in due casi specifici:
+    - se entrambi i loop sono guarded e le guard sono tra loro equivalenti (condividono la stessa condizione).
+    - se entrambi i loop non sono guarded.
+
+3. I casi particolari in cui dobbiamo verificare la presenza di istruzioni ("in più") rompiscatole sono:
+    - quando il preheader del secondo loop non coincide con l'exit block del primo l'oop;
+      in questo caso dobbiamo verificare la presenza di istruzioni che non possono essere spostate fuori dai piedi.
+    - NOTA: Quindi non dobbiamo iterare ricorsivamente i blocchi.
+
+4. Il prof non richiede lo spostamento delle istruzioni.
+
 */
 
 namespace graboidpasses::lf {
@@ -66,7 +71,7 @@ private:
     if (FL_ExitBlocks.size() != 1 || SL_ExitBlocks.size() != 1)
       return false;
 
-    // Basic Blocks must not be null
+    // Basic Blocks mustn't be null
     BasicBlock *FL_ExitBlock = FirstLoop->getExitBlock();
     BasicBlock *SL_ExitBlock = SecondLoop->getExitBlock();
     BasicBlock *SL_Preheader = SecondLoop->getLoopPreheader();
@@ -74,23 +79,39 @@ private:
         SL_Preheader == nullptr)
       return false;
 
-    // Case 1: The Preheader of the second loop is the exit block of the first
-    // one
+    // Case 1: The Preheader of the second loop
+    // is the exit block of first loop
     if (FL_ExitBlock == SL_Preheader) {
       return true;
     }
 
-    // Case 2: The Exit block is the guart or the prehader
-    bool isAdjacent = false;
-    for (BasicBlock *Succ : successors(FL_ExitBlock)) {
+    // Getting the successor of the first loop exit
+    BasicBlock *FL_ExitSuccessor = FL_ExitBlock->getSingleSuccessor();
+
+    // Case 2: The Preheader of the second loop is
+    // the successor of the exit block of first loop
+    if (FL_ExitBlock == SL_Preheader) {
+
+      // TODO: Check for instructions in the second loop preheader
+
+      return true;
+    }
+
+    // Case 3: The Guard of the second loop is
+    // the Exit block is the guard or the prehader
+    bool isGuarded = false; // second loop is guarded
+    for (BasicBlock *Succ : successors(FL_ExitSuccessor)) {
       if (Succ == SL_Preheader || Succ == SL_ExitBlock) {
-        isAdjacent = true;
+        isGuarded = true;
       } else {
-        isAdjacent = false;
+        isGuarded = false;
         break;
       }
     }
-    if (isAdjacent) {
+    if (isGuarded) { // true if the second loop is guarded
+
+      // TODO: Check for instructions in the second loop preheader
+
       return true;
     }
 
@@ -116,9 +137,6 @@ private:
 
     Loop *FL = *LoopVect.begin();
     Loop *SL = *(++LoopVect.begin());
-
-    if (!FL->isLoopSimplifyForm() || !SL->isLoopSimplifyForm())
-      return false;
 
     bool result = adjacentAnalysis(FL, SL) || adjacentAnalysis(SL, FL);
 

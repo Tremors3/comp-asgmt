@@ -94,8 +94,8 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="lf-adjacent-test"
-IS_LL_FILE=false
+SOURCE_FILE="lf-guard-auto-2"
+#IS_LL_FILE=false
 
 # [EDIT] Assignment
 ASSIGNMENT="LoopFusion"
