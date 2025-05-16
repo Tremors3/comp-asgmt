@@ -14,6 +14,7 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Dominators.h>
+#include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/PassManager.h>
 #include <llvm/IR/TrackingMDRef.h>
@@ -74,36 +75,14 @@ private:
   }
 
   /**
-   * Check if the first loop is adjacent to the second one
+   * Checks for unwanted instructions inside the preheader
    */
-  bool isFirstNextToSecond(Loop *FirstLoop, Loop *SecondLoop) const {
-
-    BasicBlock *exitBlock = FirstLoop->getExitBlock();
-    if (!exitBlock) {
-      utils::debug("[LF-ADJ] First loop has multiple exit blocks.");
-      return false;
-    }
-
-    BasicBlock *FL_ExitSucc = exitBlock->getNextNode();
-    BasicBlock *SL_Preheader = SecondLoop->getLoopPreheader();
-
-    // Case 1:  1st loop exit successor == 2nd loop header
-    if (FL_ExitSucc == SecondLoop->getHeader())
-      return true;
-
-    // Case 2:  1st loop exit successor == 2nd loop preheader
-    if (FL_ExitSucc == SL_Preheader) {
-
-      // Checking for unwanted instructions inside the preheader
-      for (Instruction &I : *SL_Preheader)
-        if (&I != SL_Preheader->getTerminator())
-          return false;
-
-      return true;
-    }
-
-    // Case 3:  1st loop exit successor == another block
-    return false;
+  bool containsUnwantedInstructions(BasicBlock *BB,
+                                    std::set<Instruction *> whitelist) const {
+    for (Instruction &I : *BB)
+      if (whitelist.count(&I) != 1)
+        return false;
+    return true;
   }
 
   /**
@@ -111,6 +90,9 @@ private:
    */
   bool firstGuardPointsSecondGuard(BasicBlock *firGuard,
                                    BasicBlock *secGuard) const {
+    // If the first guard doesn't point to the second one
+    // we are shure there are basic blocks between the
+    // first loop exit and the second loop guard.
     for (auto FG_Successor : successors(firGuard))
       if (secGuard == FG_Successor)
         return true;
@@ -147,6 +129,60 @@ private:
   }
 
   /**
+   * Check if the first loop is adjacent to the second one and if they are clean
+   * so that they don't contain unwanted instructions.
+   */
+  bool checkUnguardedLoopsAdjacency(Loop *FirstLoop, Loop *SecondLoop) const {
+
+    // First loop ExitBlock validation
+    BasicBlock *exitBlock = FirstLoop->getExitBlock();
+    if (!exitBlock) {
+      utils::debug("[LF-ADJ] First loop has multiple exit blocks.");
+      return false;
+    }
+
+    // First loop ExitBlock Successor validation
+    BasicBlock *FL_ExitSucc = exitBlock->getSingleSuccessor();
+    if (!FL_ExitSucc) {
+      utils::debug("[LF-ADJ] First loop does not have a exit successor.");
+      return false;
+    }
+
+    // Second loop Preheader validation
+    BasicBlock *SL_Preheader = SecondLoop->getLoopPreheader();
+    if (!SL_Preheader) {
+      utils::debug("[LF-ADJ] Second loop does not have a preheader.");
+      return false;
+    }
+
+    // Checking for unwanted instructions --------------------------------------
+
+    // Checking for unwanted instructions in the exit block
+    if (!containsUnwantedInstructions(SL_Preheader,
+                                      {SL_Preheader->getTerminator()})) {
+      utils::debug("[LF-ADJ] Preheader not clean.");
+      return false;
+    }
+
+    // Checking for unwanted instructions in the preheader
+    if ((exitBlock != SL_Preheader) &&
+        !containsUnwantedInstructions(exitBlock,
+                                      {exitBlock->getTerminator()})) {
+      utils::debug("[LF-ADJ] Exit block not clean.");
+      return false;
+    }
+
+    // Checking for the absence of other basic blocks --------------------------
+
+    // Checking for the absence of other basic blocks between the exit of the
+    // first loop and the preheader of the second one
+    if (exitBlock == SL_Preheader || FL_ExitSucc == SL_Preheader)
+      return true;
+
+    return false;
+  }
+
+  /**
    * Runs adjacency analysis
    */
   bool adjacentAnalysis(Loop *firstLoop, Loop *secondLoop) const {
@@ -157,18 +193,23 @@ private:
     utils::debugYesNo("[LF-ADJ] First Loop guarded?: \t", firstGuard);
     utils::debugYesNo("[LF-ADJ] Second Loop guarded?:\t", secondGuard);
 
+   // both are unguarded
+   if (firstGuard == nullptr && secondGuard == nullptr) {
+     utils::debug("[LF-ADJ] Both are unguarded");
+     return checkUnguardedLoopsAdjacency(firstLoop, secondLoop);
+   }
     // both are guarded
     if (firstGuard != nullptr && secondGuard != nullptr) {
       utils::debug("[LF-ADJ] Both are guarded");
       return firstGuardPointsSecondGuard(firstGuard, secondGuard) &&
-             areGuardsEquivalent(firstGuard, secondGuard);
-      // TODO: Check for unwanted instruction inside the prehader!
-    }
-
-    // both are unguarded
-    if (firstGuard == nullptr && secondGuard == nullptr) {
-      utils::debug("[LF-ADJ] Both are unguarded");
-      return isFirstNextToSecond(firstLoop, secondLoop);
+             areGuardsEquivalent(firstGuard, secondGuard) &&
+             containsUnwantedInstructions(
+                 secondGuard, {secondGuard->getTerminator(),
+                               dyn_cast<Instruction>(
+                                   getGuardBranchCondition(secondGuard))}) &&
+             containsUnwantedInstructions(
+                 secondLoop->getLoopPreheader(),
+                 {secondLoop->getLoopPreheader()->getTerminator()});
     }
 
     // one is guarded

@@ -178,7 +178,102 @@ define dso_local void @adjacent_one_guarded_simplify_form(i32 noundef %0) #0 {
   ret void
 }
 
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @non_adjacent_simplify_form(i32 noundef %0) #0 {
+  %2 = alloca [0 x i32], align 4
+  %3 = alloca [0 x i32], align 4
+  br label %4
+
+4:                                                ; preds = %8, %1
+  %.01 = phi i32 [ 0, %1 ], [ %7, %8 ]
+  %5 = sext i32 %.01 to i64
+  %6 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %5
+  store i32 %.01, ptr %6, align 4
+  %7 = add nsw i32 %.01, 1
+  br label %8
+
+8:                                                ; preds = %4
+  %9 = icmp slt i32 %7, %0
+  br i1 %9, label %4, label %10, !llvm.loop !15
+
+10:                                               ; preds = %8
+  %11 = call i32 @rand() #2
+  br label %12
+
+12:                                               ; preds = %16, %10
+  %.0 = phi i32 [ 0, %10 ], [ %15, %16 ]
+  %13 = sext i32 %.0 to i64
+  %14 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %13
+  store i32 %.0, ptr %14, align 4
+  %15 = add nsw i32 %.0, 1
+  br label %16
+
+16:                                               ; preds = %12
+  %17 = icmp slt i32 %15, %0
+  br i1 %17, label %12, label %18, !llvm.loop !16
+
+18:                                               ; preds = %16
+  ret void
+}
+
+; Function Attrs: nounwind
+declare i32 @rand() #1
+
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @non_adjacent_guarded_simplify_form(i32 noundef %0) #0 {
+  %2 = alloca [0 x i32], align 4
+  %3 = alloca [0 x i32], align 4
+  %4 = icmp sgt i32 %0, 0
+  br i1 %4, label %5, label %13
+
+5:                                                ; preds = %1
+  br label %6
+
+6:                                                ; preds = %10, %5
+  %.01 = phi i32 [ 0, %5 ], [ %9, %10 ]
+  %7 = sext i32 %.01 to i64
+  %8 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %7
+  store i32 %.01, ptr %8, align 4
+  %9 = add nsw i32 %.01, 1
+  br label %10
+
+10:                                               ; preds = %6
+  %11 = icmp slt i32 %9, %0
+  br i1 %11, label %6, label %12, !llvm.loop !17
+
+12:                                               ; preds = %10
+  br label %13
+
+13:                                               ; preds = %12, %1
+  %14 = call i32 @rand() #2
+  %15 = icmp sgt i32 %0, 0
+  br i1 %15, label %16, label %24
+
+16:                                               ; preds = %13
+  br label %17
+
+17:                                               ; preds = %21, %16
+  %.0 = phi i32 [ 0, %16 ], [ %20, %21 ]
+  %18 = sext i32 %.0 to i64
+  %19 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %18
+  store i32 %.0, ptr %19, align 4
+  %20 = add nsw i32 %.0, 1
+  br label %21
+
+21:                                               ; preds = %17
+  %22 = icmp slt i32 %20, %0
+  br i1 %22, label %17, label %23, !llvm.loop !18
+
+23:                                               ; preds = %21
+  br label %24
+
+24:                                               ; preds = %23, %13
+  ret void
+}
+
 attributes #0 = { noinline nounwind sspstrong uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
+attributes #1 = { nounwind "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
+attributes #2 = { nounwind }
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}
@@ -198,3 +293,7 @@ attributes #0 = { noinline nounwind sspstrong uwtable "frame-pointer"="all" "min
 !12 = distinct !{!12, !7}
 !13 = distinct !{!13, !7}
 !14 = distinct !{!14, !7}
+!15 = distinct !{!15, !7}
+!16 = distinct !{!16, !7}
+!17 = distinct !{!17, !7}
+!18 = distinct !{!18, !7}

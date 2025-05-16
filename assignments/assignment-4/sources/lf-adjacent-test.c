@@ -1,4 +1,5 @@
 
+#include <stdlib.h>
 void adjacent(int N) {
 
   int B[] = {}, A[] = {};
@@ -66,4 +67,44 @@ void adjacent_one_guarded_simplify_form(int N) {
     j++;
   } while (j < N);
 
+}
+
+void non_adjacent_simplify_form(int N) {
+
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0;
+
+  do {
+    A[i] = i;
+    i++;
+  } while (i < N);
+
+  int x = rand();
+
+  do {
+    B[j] = j;
+    j++;
+  } while (j < N);
+}
+
+void non_adjacent_guarded_simplify_form(int N) {
+
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0;
+
+  if (N > 0) {
+    do {
+      A[i] = i;
+      i++;
+    } while (i < N);
+  }
+
+  int x = rand();
+
+  if (N > 0) {
+    do {
+      B[j] = j;
+      j++;
+    } while (j < N);
+  }
 }
