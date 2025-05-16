@@ -5,6 +5,9 @@
 // DESCRIPTION:
 //    Academic implementation of loop fusion.
 //
+// EXECUTE WITH PASSES:
+//    opt ... -passes="loop(loop-rotate),function(gb-loop-fusion)" ...
+//
 // License: GPL3
 //============================================================================//
 #include <llvm/ADT/SmallVector.h>
@@ -362,7 +365,7 @@ llvm::PassPluginLibraryInfo getPassRegisterPluginInfo() {
             PB.registerPipelineParsingCallback(
                 [](StringRef Name, FunctionPassManager &FPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
-                  if (Name == "-loop-fusion-pass") {
+                  if (Name == "gb-loop-fusion") {
                     FPM.addPass(graboidpasses::lf::LoopFusionPass());
                     return true;
                   }
