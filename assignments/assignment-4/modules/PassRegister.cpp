@@ -43,6 +43,10 @@ non possono essere spostate fuori dai piedi.
 
 4. Il prof non richiede lo spostamento delle istruzioni.
 
+TODO: Capire perche' la prima guard non punta alla seconda in alcuni casi (i.e.
+il penultimo dei casi). O la prima punta a qualcos'altro o quando si prende la
+guard dal secondo loop non si ottiene quella che dovrebbe essere la guard.
+
 */
 
 namespace graboidpasses::lf {
@@ -132,16 +136,16 @@ private:
     // VALIDATING
 
     // First loop ExitBlock validation
-    BasicBlock *exitBlock = firstLoop->getExitBlock();
-    if (!exitBlock) {
+    BasicBlock *FL_exitBlock = firstLoop->getExitBlock();
+    if (!FL_exitBlock) {
       utils::debug("[LF-ADJ] First loop has multiple exit blocks.",
                    utils::WARNING);
       return false;
     }
 
     // Second loop Preheader validation
-    BasicBlock *SL_Preheader = secondLoop->getLoopPreheader();
-    if (!SL_Preheader) {
+    BasicBlock *SL_preheader = secondLoop->getLoopPreheader();
+    if (!SL_preheader) {
       utils::debug("[LF-ADJ] Second loop does not have a preheader.",
                    utils::WARNING);
       return false;
@@ -158,15 +162,15 @@ private:
     // CHECKING FOR UNWANTED INSTRUCTIONS
 
     // Checking for unwanted instructions in the first loop exit block
-    if (!cleanFromUnwantedInstructions(SL_Preheader,
-                                       {SL_Preheader->getTerminator()})) {
+    if (!cleanFromUnwantedInstructions(SL_preheader,
+                                       {SL_preheader->getTerminator()})) {
       utils::debug("[LF-ADJ] Preheader not clean.", utils::WARNING);
       return false;
     }
 
     // Checking for unwanted instructions in the second loop preheader
-    if (!cleanFromUnwantedInstructions(exitBlock,
-                                       {exitBlock->getTerminator()})) {
+    if (!cleanFromUnwantedInstructions(FL_exitBlock,
+                                       {FL_exitBlock->getTerminator()})) {
       utils::debug("[LF-ADJ] Exit block not clean.", utils::WARNING);
       return false;
     }
@@ -199,25 +203,26 @@ private:
     // VALIDATING
 
     // First loop ExitBlock validation
-    BasicBlock *exitBlock = firstLoop->getExitBlock();
-    if (!exitBlock) {
+    BasicBlock *FL_exitBlock = firstLoop->getExitBlock();
+    if (!FL_exitBlock) {
       utils::debug("[LF-ADJ] First loop has multiple exit blocks.",
                    utils::WARNING);
       return false;
     }
 
-    // First loop ExitBlock Successor validation
-    BasicBlock *FL_ExitSucc = exitBlock->getSingleSuccessor();
-    if (!FL_ExitSucc) {
-      utils::debug("[LF-ADJ] First loop does not have a exit successor.",
+    // Second loop Preheader validation
+    BasicBlock *SL_preheader = secondLoop->getLoopPreheader();
+    if (!SL_preheader) {
+      utils::debug("[LF-ADJ] Second loop does not have a preheader.",
                    utils::WARNING);
       return false;
     }
 
-    // Second loop Preheader validation
-    BasicBlock *SL_Preheader = secondLoop->getLoopPreheader();
-    if (!SL_Preheader) {
-      utils::debug("[LF-ADJ] Second loop does not have a preheader.",
+    // CHECKING FOR THE PRESENCE OF OTHER BASIC BLOCKS
+
+    // Checking for the presence of basic blocks between the exit and preheader
+    if (FL_exitBlock != SL_preheader) {
+      utils::debug("[LF-ADJ] The exit block isn't the preheader.",
                    utils::WARNING);
       return false;
     }
@@ -225,26 +230,9 @@ private:
     // CHECKING FOR UNWANTED INSTRUCTIONS
 
     // Checking for unwanted instructions in the first loop exit block
-    if (!cleanFromUnwantedInstructions(SL_Preheader,
-                                       {SL_Preheader->getTerminator()})) {
+    if (!cleanFromUnwantedInstructions(SL_preheader,
+                                       {SL_preheader->getTerminator()})) {
       utils::debug("[LF-ADJ] Preheader not clean.", utils::WARNING);
-      return false;
-    }
-
-    // Checking for unwanted instructions in the second loop preheader
-    if ((exitBlock != SL_Preheader) &&
-        !cleanFromUnwantedInstructions(exitBlock,
-                                       {exitBlock->getTerminator()})) {
-      utils::debug("[LF-ADJ] Exit block not clean.", utils::WARNING);
-      return false;
-    }
-
-    // CHECKING FOR THE PRESENCE OF OTHER BASIC BLOCKS
-
-    // Checking for the presence of basic blocks between the exit and preheader
-    if ((exitBlock != SL_Preheader) && (FL_ExitSucc != SL_Preheader)) {
-      utils::debug("[LF-ADJ] Blocks between exit and second loop.",
-                   utils::WARNING);
       return false;
     }
 

@@ -142,6 +142,8 @@ execute_passes() {
 
 echo "Running opt to apply pass..."; echo
 
+#execute_passes "loop(loop-rotate),function(loop-simplify),function(gb-loop-fusion)"
 execute_passes "loop(loop-rotate),function(gb-loop-fusion)"
+#execute_passes "function(gb-loop-fusion)"
 
 echo; echo "Build and processing completed."
