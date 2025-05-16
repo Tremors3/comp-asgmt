@@ -19,12 +19,19 @@ using namespace llvm;
 
 namespace graboidpasses::utils {
 
+extern std::string OK;
+extern std::string OK2;
+extern std::string INFO;
+extern std::string INFO2;
+extern std::string WARNING;
+extern std::string VALID;
+
 void debug(std::string text, std::string pre = "", std::string post = "\033[0m",
            char terminator = '\n');
 
 void debugYesNo(std::string text, bool condition,
-                std::string trueCondition = "\033[1;38:5:40mYes",
-                std::string falseCondition = "\033[1;38:5:160mNo", std::string pre = "",
+                std::string trueCondition = "\033[0;38:5:46mYes",
+                std::string falseCondition = "\033[0;38:5:196mNo", std::string pre = "",
                 std::string post = "\033[0m", char terminator = '\n');
 
 } // namespace graboidpasses::utils

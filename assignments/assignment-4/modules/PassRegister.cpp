@@ -1,4 +1,4 @@
-//==============================================================================
+//============================================================================//
 // FILE:
 //    PassRegister.cpp
 //
@@ -6,24 +6,13 @@
 //    Academic implementation of loop fusion.
 //
 // License: GPL3
-//==============================================================================
-#include "llvm/Analysis/PostDominators.h"
-#include <llvm/ADT/STLExtras.h>
+//============================================================================//
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/LoopInfo.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/CFG.h>
-#include <llvm/IR/Dominators.h>
-#include <llvm/IR/Instruction.h>
-#include <llvm/IR/Instructions.h>
+#include <llvm/Analysis/PostDominators.h>
 #include <llvm/IR/PassManager.h>
-#include <llvm/IR/TrackingMDRef.h>
-#include <llvm/IR/Value.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/raw_ostream.h>
-#include <string>
 
 #include "Utils.hpp"
 
@@ -122,7 +111,8 @@ private:
         if (firCond->getPredicate() == secCond->getPredicate() &&
             firCond->getOperand(0) == secCond->getOperand(0) &&
             firCond->getOperand(1) == secCond->getOperand(1)) {
-          utils::debug("[LF-ADJ] Both guards have the same condition");
+          utils::debug("[LF-ADJ] Both guards have the same condition.",
+                       utils::OK);
           return true;
         }
       }
@@ -141,21 +131,24 @@ private:
     // First loop ExitBlock validation
     BasicBlock *exitBlock = firstLoop->getExitBlock();
     if (!exitBlock) {
-      utils::debug("[LF-ADJ] First loop has multiple exit blocks.");
+      utils::debug("[LF-ADJ] First loop has multiple exit blocks.",
+                   utils::WARNING);
       return false;
     }
 
     // Second loop Preheader validation
     BasicBlock *SL_Preheader = secondLoop->getLoopPreheader();
     if (!SL_Preheader) {
-      utils::debug("[LF-ADJ] Second loop does not have a preheader.");
+      utils::debug("[LF-ADJ] Second loop does not have a preheader.",
+                   utils::WARNING);
       return false;
     }
 
     // CHECKING FOR THE ABSENCE OF OTHER BASIC BLOCKS
 
     if (!firstGuardPointsSecondGuard(firstGuard, secondGuard)) {
-      utils::debug("[LF-ADJ] The first guard doesn't point to the second one.");
+      utils::debug("[LF-ADJ] The first guard doesn't point to the second one.",
+                   utils::WARNING);
       return false;
     }
 
@@ -164,31 +157,30 @@ private:
     // Checking for unwanted instructions in the first loop exit block
     if (!cleanFromUnwantedInstructions(SL_Preheader,
                                        {SL_Preheader->getTerminator()})) {
-      utils::debug("[LF-ADJ] Preheader not clean.");
+      utils::debug("[LF-ADJ] Preheader not clean.", utils::WARNING);
       return false;
     }
 
     // Checking for unwanted instructions in the second loop preheader
     if (!cleanFromUnwantedInstructions(exitBlock,
                                        {exitBlock->getTerminator()})) {
-      utils::debug("[LF-ADJ] Exit block not clean.");
+      utils::debug("[LF-ADJ] Exit block not clean.", utils::WARNING);
       return false;
     }
 
     // Checking for unwanted instructions in the second loop guard
-    if ((secondGuard != exitBlock) && (secondGuard != SL_Preheader) &&
-        !cleanFromUnwantedInstructions(
+    if (!cleanFromUnwantedInstructions(
             secondGuard,
             {secondGuard->getTerminator(),
              dyn_cast<Instruction>(getGuardBranchCondition(secondGuard))})) {
-      utils::debug("[LF-ADJ] Second guard is not clean.");
+      utils::debug("[LF-ADJ] Second guard not clean.", utils::WARNING);
       return false;
     }
 
     // CHECKING FOR GUARDS EQUIVALENCE
 
     if (!areGuardsEquivalent(firstGuard, secondGuard)) {
-      utils::debug("[LF-ADJ] Guards are not equivalents.");
+      utils::debug("[LF-ADJ] Guards are not equivalents.", utils::WARNING);
       return false;
     }
 
@@ -206,21 +198,24 @@ private:
     // First loop ExitBlock validation
     BasicBlock *exitBlock = firstLoop->getExitBlock();
     if (!exitBlock) {
-      utils::debug("[LF-ADJ] First loop has multiple exit blocks.");
+      utils::debug("[LF-ADJ] First loop has multiple exit blocks.",
+                   utils::WARNING);
       return false;
     }
 
     // First loop ExitBlock Successor validation
     BasicBlock *FL_ExitSucc = exitBlock->getSingleSuccessor();
     if (!FL_ExitSucc) {
-      utils::debug("[LF-ADJ] First loop does not have a exit successor.");
+      utils::debug("[LF-ADJ] First loop does not have a exit successor.",
+                   utils::WARNING);
       return false;
     }
 
     // Second loop Preheader validation
     BasicBlock *SL_Preheader = secondLoop->getLoopPreheader();
     if (!SL_Preheader) {
-      utils::debug("[LF-ADJ] Second loop does not have a preheader.");
+      utils::debug("[LF-ADJ] Second loop does not have a preheader.",
+                   utils::WARNING);
       return false;
     }
 
@@ -229,7 +224,7 @@ private:
     // Checking for unwanted instructions in the first loop exit block
     if (!cleanFromUnwantedInstructions(SL_Preheader,
                                        {SL_Preheader->getTerminator()})) {
-      utils::debug("[LF-ADJ] Preheader not clean.");
+      utils::debug("[LF-ADJ] Preheader not clean.", utils::WARNING);
       return false;
     }
 
@@ -237,7 +232,7 @@ private:
     if ((exitBlock != SL_Preheader) &&
         !cleanFromUnwantedInstructions(exitBlock,
                                        {exitBlock->getTerminator()})) {
-      utils::debug("[LF-ADJ] Exit block not clean.");
+      utils::debug("[LF-ADJ] Exit block not clean.", utils::WARNING);
       return false;
     }
 
@@ -245,7 +240,8 @@ private:
 
     // Checking for the presence of basic blocks between the exit and preheader
     if ((exitBlock != SL_Preheader) && (FL_ExitSucc != SL_Preheader)) {
-      utils::debug("[LF-ADJ] Blocks between exit and second loop.");
+      utils::debug("[LF-ADJ] Blocks between exit and second loop.",
+                   utils::WARNING);
       return false;
     }
 
@@ -265,19 +261,19 @@ private:
 
     // both are unguarded
     if (firstGuard == nullptr && secondGuard == nullptr) {
-      utils::debug("[LF-ADJ] Both are unguarded");
+      utils::debug("[LF-ADJ] Both are unguarded.", utils::INFO);
       return checkUnguardedLoopsAdjacency(firstLoop, secondLoop);
     }
 
     // both are guarded
     if (firstGuard != nullptr && secondGuard != nullptr) {
-      utils::debug("[LF-ADJ] Both are guarded");
+      utils::debug("[LF-ADJ] Both are guarded.", utils::INFO);
       return checkGuardedLoopsAdjacency(firstLoop, secondLoop, firstGuard,
                                         secondGuard);
     }
 
     // one is guarded
-    utils::debug("[LF-ADJ] Only one is guarded");
+    utils::debug("[LF-ADJ] Only one is guarded.", utils::WARNING);
     return false;
   }
 
@@ -300,19 +296,26 @@ private:
    */
   bool analyzeCouple(Loop *FL, Loop *SL, DominatorTree *DT,
                      PostDominatorTree *PDT) const {
-    utils::debug("[LF] Couple:", "\033[1;38:5:255m", "\033[0m");
     utils::debug("[LF] 1° loop, depth: " + std::to_string(FL->getLoopDepth()),
-                 "\033[1;38:5:255m", "\033[0m");
+                 utils::INFO2);
     utils::debug("[LF] 2° loop, depth: " + std::to_string(SL->getLoopDepth()),
-                 "\033[1;38:5:255m", "\033[0m");
+                 utils::INFO2);
 
     if (!FL || !SL) {
-      utils::debug("[LF] At least one of the two loops is null");
+      utils::debug("[LF] At least one of the two loops is null.",
+                   utils::WARNING);
       return false;
     }
 
     if (!FL->isLoopSimplifyForm() || !SL->isLoopSimplifyForm()) {
-      utils::debug("[LF] At least one of the two loops isn't in simplify form");
+      utils::debug("[LF] At least one of the two loops isn't in simplify form.",
+                   utils::WARNING);
+      return false;
+    }
+
+    if (!FL->isRotatedForm() || !SL->isRotatedForm()) {
+      utils::debug("[LF] At least one of the two loops isn't in rotated form.",
+                   utils::WARNING);
       return false;
     }
 
@@ -326,8 +329,7 @@ private:
   }
 
   bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
-    utils::debug("\n[LF] Run on function: " + F.getName().str(),
-                 "\033[1;38:5:40m", "\033[0m");
+    utils::debug("\n[LF] Run on function: " + F.getName().str(), utils::OK2);
 
     LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
     DominatorTree &DT = AM.getResult<DominatorTreeAnalysis>(F);
@@ -336,7 +338,8 @@ private:
     const std::vector<Loop *> LoopVect = LI.getTopLevelLoops();
 
     if (LoopVect.size() < 2) {
-      utils::debug("[LF] Less than 2 top-level loops in function.");
+      utils::debug("[LF] Less than 2 top-level loops in function.",
+                   utils::WARNING);
       return false;
     }
 
@@ -344,6 +347,8 @@ private:
     Loop *SL = *LoopVect.begin();
 
     bool isCoupleValid = analyzeCouple(FL, SL, &DT, &PDT);
+    if (isCoupleValid)
+      utils::debug("[LF] Couple is valid.", utils::VALID);
 
     return false;
   }
