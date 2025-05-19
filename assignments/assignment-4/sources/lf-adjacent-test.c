@@ -239,3 +239,41 @@ void adjacent_differently_guarded_simplify_form(int N) {
     } while (j < N);
   }
 }
+
+/* ------------------------------ SINGLE GUARD ------------------------------ */
+
+void adjacent_single_guard(int N) {
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0;
+
+  if (N > 0) {
+    do {
+      A[i] = i;
+      i++;
+    } while (i < N);
+
+    do {
+      B[j] = j;
+      j++;
+    } while (j < N);
+  }
+}
+
+void adjacent_nested_guard(int N) {
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0;
+
+  if (N > 0) {
+    do {
+      A[i] = i;
+      i++;
+    } while (i < N);
+
+    if (N > 0) {
+      do {
+        B[j] = j;
+        j++;
+      } while (j < N);
+    }
+  }
+}

@@ -276,8 +276,18 @@ private:
   bool areControlFlowEquivalent(Loop *firstLoop, Loop *secondLoop,
                                 DominatorTree *DT,
                                 PostDominatorTree *PDT) const {
-    return (DT->dominates(firstLoop->getHeader(), secondLoop->getHeader()) &&
-            PDT->dominates(secondLoop->getHeader(), firstLoop->getHeader()));
+
+    BasicBlock *firstEntry = getLoopGuard(firstLoop),
+               *secondEntry = getLoopGuard(secondLoop);
+
+    // If not all the loops are guarded, use the header instead
+    if (firstEntry == nullptr || secondEntry == nullptr) {
+      firstEntry = firstLoop->getHeader();
+      secondEntry = secondLoop->getHeader();
+    }
+
+    return (DT->dominates(firstEntry, secondEntry) &&
+            PDT->dominates(secondEntry, firstEntry));
   }
 
   /* ------------------------------------------------------------------------ */
