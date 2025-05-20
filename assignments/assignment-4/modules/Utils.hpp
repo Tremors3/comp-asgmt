@@ -19,12 +19,12 @@ using namespace llvm;
 
 namespace graboidpasses::utils {
 
-extern std::string OK;
-extern std::string OK2;
-extern std::string INFO;
-extern std::string INFO2;
-extern std::string WARNING;
-extern std::string VALID;
+extern std::string DARK_GREEN;
+extern std::string GREEN;
+extern std::string BLUE;
+extern std::string WHITE;
+extern std::string YELLOW;
+extern std::string PURPLE;
 
 void debug(std::string text, std::string pre = "", std::string post = "\033[0m",
            char terminator = '\n');

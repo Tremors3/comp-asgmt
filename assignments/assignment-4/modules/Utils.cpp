@@ -11,12 +11,12 @@
 
 namespace graboidpasses::utils {
 
-std::string OK = "\033[0;38:5:40m";
-std::string OK2 = "\033[1;38:5:40m";
-std::string INFO = "\033[1;38:5:45m";
-std::string INFO2 = "\033[1;38:5:255m";
-std::string WARNING = "\033[1;38:5:226m";
-std::string VALID = "\033[1;38:5:200m";
+std::string DARK_GREEN = "\033[0;38:5:40m";
+std::string GREEN = "\033[1;38:5:40m";
+std::string BLUE = "\033[1;38:5:45m";
+std::string WHITE = "\033[1;38:5:255m";
+std::string YELLOW = "\033[1;38:5:226m";
+std::string PURPLE = "\033[1;38:5:200m";
 
 void debug(std::string text, std::string pre, std::string post,
            char terminator) {

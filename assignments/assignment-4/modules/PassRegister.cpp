@@ -11,8 +11,10 @@
 // License: GPL3
 //============================================================================//
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Analysis/DependenceAnalysis.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/Analysis/PostDominators.h>
+#include <llvm/Analysis/ScalarEvolution.h>
 #include <llvm/IR/PassManager.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
@@ -89,7 +91,7 @@ private:
   bool firstGuardPointsSecondGuard(BasicBlock *firGuard,
                                    BasicBlock *secGuard) const {
     // If the first guard doesn't point to the second one
-    // we are shure there are basic blocks between the
+    // we are sure there are basic blocks between the
     // first loop exit and the second loop guard.
     for (auto FG_Successor : successors(firGuard))
       if (secGuard == FG_Successor)
@@ -119,7 +121,7 @@ private:
             firCond->getOperand(0) == secCond->getOperand(0) &&
             firCond->getOperand(1) == secCond->getOperand(1)) {
           utils::debug("[LF-ADJ] Both guards have the same condition.",
-                       utils::OK);
+                       utils::DARK_GREEN);
           return true;
         }
       }
@@ -139,7 +141,7 @@ private:
     BasicBlock *FL_exitBlock = firstLoop->getExitBlock();
     if (!FL_exitBlock) {
       utils::debug("[LF-ADJ] First loop has multiple exit blocks.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
@@ -147,7 +149,7 @@ private:
     BasicBlock *SL_preheader = secondLoop->getLoopPreheader();
     if (!SL_preheader) {
       utils::debug("[LF-ADJ] Second loop does not have a preheader.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
@@ -155,7 +157,7 @@ private:
 
     if (!firstGuardPointsSecondGuard(firstGuard, secondGuard)) {
       utils::debug("[LF-ADJ] The first guard doesn't point to the second one.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
@@ -164,14 +166,14 @@ private:
     // Checking for unwanted instructions in the first loop exit block
     if (!cleanFromUnwantedInstructions(SL_preheader,
                                        {SL_preheader->getTerminator()})) {
-      utils::debug("[LF-ADJ] Preheader not clean.", utils::WARNING);
+      utils::debug("[LF-ADJ] Preheader not clean.", utils::YELLOW);
       return false;
     }
 
     // Checking for unwanted instructions in the second loop preheader
     if (!cleanFromUnwantedInstructions(FL_exitBlock,
                                        {FL_exitBlock->getTerminator()})) {
-      utils::debug("[LF-ADJ] Exit block not clean.", utils::WARNING);
+      utils::debug("[LF-ADJ] Exit block not clean.", utils::YELLOW);
       return false;
     }
 
@@ -180,14 +182,14 @@ private:
             secondGuard,
             {secondGuard->getTerminator(),
              dyn_cast<Instruction>(getGuardBranchCondition(secondGuard))})) {
-      utils::debug("[LF-ADJ] Second guard not clean.", utils::WARNING);
+      utils::debug("[LF-ADJ] Second guard not clean.", utils::YELLOW);
       return false;
     }
 
     // CHECKING FOR GUARDS EQUIVALENCE
 
     if (!areGuardsEquivalent(firstGuard, secondGuard)) {
-      utils::debug("[LF-ADJ] Guards are not equivalents.", utils::WARNING);
+      utils::debug("[LF-ADJ] Guards are not equivalents.", utils::YELLOW);
       return false;
     }
 
@@ -206,7 +208,7 @@ private:
     BasicBlock *FL_exitBlock = firstLoop->getExitBlock();
     if (!FL_exitBlock) {
       utils::debug("[LF-ADJ] First loop has multiple exit blocks.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
@@ -214,7 +216,7 @@ private:
     BasicBlock *SL_preheader = secondLoop->getLoopPreheader();
     if (!SL_preheader) {
       utils::debug("[LF-ADJ] Second loop does not have a preheader.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
@@ -223,7 +225,7 @@ private:
     // Checking for the presence of basic blocks between the exit and preheader
     if (FL_exitBlock != SL_preheader) {
       utils::debug("[LF-ADJ] The exit block isn't the preheader.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
@@ -232,7 +234,7 @@ private:
     // Checking for unwanted instructions in the first loop exit block
     if (!cleanFromUnwantedInstructions(SL_preheader,
                                        {SL_preheader->getTerminator()})) {
-      utils::debug("[LF-ADJ] Preheader not clean.", utils::WARNING);
+      utils::debug("[LF-ADJ] Preheader not clean.", utils::YELLOW);
       return false;
     }
 
@@ -252,19 +254,19 @@ private:
 
     // both are unguarded
     if (firstGuard == nullptr && secondGuard == nullptr) {
-      utils::debug("[LF-ADJ] Both are unguarded.", utils::INFO);
+      utils::debug("[LF-ADJ] Both are unguarded.", utils::BLUE);
       return checkUnguardedLoopsAdjacency(firstLoop, secondLoop);
     }
 
     // both are guarded
     if (firstGuard != nullptr && secondGuard != nullptr) {
-      utils::debug("[LF-ADJ] Both are guarded.", utils::INFO);
+      utils::debug("[LF-ADJ] Both are guarded.", utils::BLUE);
       return checkGuardedLoopsAdjacency(firstLoop, secondLoop, firstGuard,
                                         secondGuard);
     }
 
     // one is guarded
-    utils::debug("[LF-ADJ] Only one is guarded.", utils::WARNING);
+    utils::debug("[LF-ADJ] Only one is guarded.", utils::YELLOW);
     return false;
   }
 
@@ -292,31 +294,82 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
+  bool areTripCountEquivalent(Loop *firstLoop, Loop *secondLoop,
+                              ScalarEvolution *SE) const {
+    // https://llvm.org/devmtg/2018-04/slides/Absar-ScalarEvolution.pdf
+
+    if (!SE->hasLoopInvariantBackedgeTakenCount(firstLoop) ||
+        !SE->hasLoopInvariantBackedgeTakenCount(secondLoop)) {
+      utils::debug("[LF-TCE] At least one of the loops hasn't got a loop "
+                   "invariant backedge.",
+                   utils::YELLOW);
+      return false;
+    }
+
+    // https://llvm.org/docs/LoopTerminology.html
+    const SCEV *l1scev = SE->getBackedgeTakenCount(firstLoop),
+               *l2scev = SE->getBackedgeTakenCount(secondLoop);
+
+    if (isa<SCEVCouldNotCompute>(l1scev) || isa<SCEVCouldNotCompute>(l2scev)) {
+      utils::debug("[LF-TCE] The backedge is not of the correct type.",
+                   utils::YELLOW);
+      return false;
+    }
+
+    utils::debugYesNo("[LF-TCE] Are SCEV equals:\t", (l1scev == l2scev));
+
+    unsigned l1tc = SE->getSmallConstantTripMultiple(firstLoop, l1scev),
+             l2tc = SE->getSmallConstantTripMultiple(secondLoop, l2scev);
+
+    if (l1tc != l2tc) {
+      utils::debug("[LF-TCE] The trip count of the two loops is different.",
+                   utils::YELLOW);
+      return false;
+    }
+
+    utils::debug("[LF-TCE] Same BackEdge Count:\t" + std::to_string(l1tc),
+                 utils::BLUE);
+
+    return true;
+  }
+
+  /* ------------------------------------------------------------------------ */
+
+  bool areNegativeDistanceDependentResilient(Loop *firstLoop, Loop *secondLoop,
+                                             DependenceInfo *DI) const {
+    // stop
+
+    return true;
+  }
+
+  /* ------------------------------------------------------------------------ */
+
   /**
    * Analyze two loops
    */
   bool analyzeCouple(Loop *FL, Loop *SL, DominatorTree *DT,
-                     PostDominatorTree *PDT) const {
+                     PostDominatorTree *PDT, ScalarEvolution *SE,
+                     DependenceInfo *DI) const {
     utils::debug("[LF] 1° loop, depth: " + std::to_string(FL->getLoopDepth()),
-                 utils::INFO2);
+                 utils::WHITE);
     utils::debug("[LF] 2° loop, depth: " + std::to_string(SL->getLoopDepth()),
-                 utils::INFO2);
+                 utils::WHITE);
 
     if (!FL || !SL) {
       utils::debug("[LF] At least one of the two loops is null.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
     if (!FL->isLoopSimplifyForm() || !SL->isLoopSimplifyForm()) {
       utils::debug("[LF] At least one of the two loops isn't in simplify form.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
     if (!FL->isRotatedForm() || !SL->isRotatedForm()) {
       utils::debug("[LF] At least one of the two loops isn't in rotated form.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
@@ -326,30 +379,40 @@ private:
     bool isCoupleCFE = areControlFlowEquivalent(FL, SL, DT, PDT);
     utils::debugYesNo("[LF-CFE] Is couple CFE?: \t", isCoupleCFE);
 
-    return isCoupleAdjacent && isCoupleCFE;
+    bool isCoupleTCE = areTripCountEquivalent(FL, SL, SE);
+    utils::debugYesNo("[LF-TCE] Is couple TCE?: \t", isCoupleTCE);
+
+    bool isCoupleNDDR = areNegativeDistanceDependentResilient(FL, SL, DI);
+    utils::debugYesNo("[LF-NDDR] Is couple NDDR?: \t", isCoupleNDDR);
+
+    return isCoupleAdjacent && isCoupleCFE && isCoupleTCE && isCoupleNDDR;
   }
 
   bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
-    utils::debug("\n[LF] Run on function: " + F.getName().str(), utils::OK2);
+    utils::debug("\n\033[1;38:5:15m " \
+    ">=============================================================<\033[0m");
+    utils::debug("\n[LF] Run on function: " + F.getName().str(), utils::GREEN);
 
     LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
     DominatorTree &DT = AM.getResult<DominatorTreeAnalysis>(F);
     PostDominatorTree &PDT = AM.getResult<PostDominatorTreeAnalysis>(F);
+    ScalarEvolution &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
+    DependenceInfo &DI = AM.getResult<DependenceAnalysis>(F);
 
     const std::vector<Loop *> LoopVect = LI.getTopLevelLoops();
 
     if (LoopVect.size() < 2) {
       utils::debug("[LF] Less than 2 top-level loops in function.",
-                   utils::WARNING);
+                   utils::YELLOW);
       return false;
     }
 
     Loop *FL = *(++LoopVect.begin());
     Loop *SL = *LoopVect.begin();
 
-    bool isCoupleValid = analyzeCouple(FL, SL, &DT, &PDT);
+    bool isCoupleValid = analyzeCouple(FL, SL, &DT, &PDT, &SE, &DI);
     if (isCoupleValid)
-      utils::debug("[LF] Couple is valid.", utils::VALID);
+      utils::debug("[LF] Couple is valid.", utils::PURPLE);
 
     return false;
   }

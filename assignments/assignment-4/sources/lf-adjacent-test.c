@@ -4,6 +4,7 @@
 /* --------------------------------- NORMAL --------------------------------- */
 
 void adjacent(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
 
   for (int i = 0; i < N; ++i) {
@@ -16,6 +17,8 @@ void adjacent(int N) {
 }
 
 void adjacent_simplify_form(int N) {
+  N = 10;
+  int M = 11;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -27,12 +30,13 @@ void adjacent_simplify_form(int N) {
   do {
     B[j] = j;
     j++;
-  } while (j < N);
+  } while (j < M);
 }
 
 /* -------------------------------- ADJACENT -------------------------------- */
 
 void adjacent_guarded(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
 
   if (rand()) {
@@ -49,6 +53,7 @@ void adjacent_guarded(int N) {
 }
 
 void adjacent_guarded_simplify_form(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -70,6 +75,7 @@ void adjacent_guarded_simplify_form(int N) {
 /* ------------------------------- ONE GUARDED ------------------------------ */
 
 void adjacent_one_guarded(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
 
   if (rand()) {
@@ -84,6 +90,7 @@ void adjacent_one_guarded(int N) {
 }
 
 void adjacent_one_guarded_simplify_form(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -101,6 +108,7 @@ void adjacent_one_guarded_simplify_form(int N) {
 }
 
 void adjacent_one_guarded_reverse(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
 
   for (int i = 0; i < N; ++i) {
@@ -115,6 +123,7 @@ void adjacent_one_guarded_reverse(int N) {
 }
 
 void adjacent_one_guarded_simplify_form_reverse(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -134,6 +143,7 @@ void adjacent_one_guarded_simplify_form_reverse(int N) {
 /* ------------------------------ NON ADJACENT ------------------------------ */
 
 void non_adjacent(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
 
   for (int i = 0; i < N; ++i) {
@@ -148,6 +158,7 @@ void non_adjacent(int N) {
 }
 
 void non_adjacent_simplify_form(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -165,6 +176,7 @@ void non_adjacent_simplify_form(int N) {
 }
 
 void non_adjacent_guarded(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
 
   if (rand()) {
@@ -183,6 +195,7 @@ void non_adjacent_guarded(int N) {
 }
 
 void non_adjacent_guarded_simplify_form(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -203,9 +216,8 @@ void non_adjacent_guarded_simplify_form(int N) {
   }
 }
 
-/* ----------------------------- DIFFERENT GUARD ---------------------------- */
-
-void adjacent_differently_guarded(int N) {
+void conditional_block_between_exit_and_guard(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
 
   if (N > 0) {
@@ -221,7 +233,10 @@ void adjacent_differently_guarded(int N) {
   }
 }
 
+/* ----------------------------- DIFFERENT GUARD ---------------------------- */
+
 void adjacent_differently_guarded_simplify_form(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -242,7 +257,8 @@ void adjacent_differently_guarded_simplify_form(int N) {
 
 /* ------------------------------ SINGLE GUARD ------------------------------ */
 
-void adjacent_single_guard(int N) {
+void adjacent_global_guard(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -260,6 +276,7 @@ void adjacent_single_guard(int N) {
 }
 
 void adjacent_nested_guard(int N) {
+  N = 10;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -270,6 +287,27 @@ void adjacent_nested_guard(int N) {
     } while (i < N);
 
     if (N > 0) {
+      do {
+        B[j] = j;
+        j++;
+      } while (j < N);
+    }
+  }
+}
+
+void adjacent_one_nested_guard(int N) {
+  N = 10;
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0;
+
+  if (N == 0) {
+    do {
+      A[i] = i;
+      i++;
+    } while (i < N);
+  }
+  if (N == 0) {
+    if (N == 0) {
       do {
         B[j] = j;
         j++;
