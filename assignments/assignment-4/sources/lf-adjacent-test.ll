@@ -53,11 +53,11 @@ define dso_local void @adjacent_simplify_form(i32 noundef %0) #0 {
   br label %4
 
 4:                                                ; preds = %8, %1
-  %.01 = phi i32 [ 0, %1 ], [ %7, %8 ]
-  %5 = sext i32 %.01 to i64
+  %.0 = phi i32 [ 0, %1 ], [ %7, %8 ]
+  %5 = sext i32 %.0 to i64
   %6 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %5
-  store i32 %.01, ptr %6, align 4
-  %7 = add nsw i32 %.01, 1
+  store i32 %.0, ptr %6, align 4
+  %7 = add nsw i32 %.0, 1
   br label %8
 
 8:                                                ; preds = %4
@@ -68,15 +68,15 @@ define dso_local void @adjacent_simplify_form(i32 noundef %0) #0 {
   br label %11
 
 11:                                               ; preds = %15, %10
-  %.0 = phi i32 [ 0, %10 ], [ %14, %15 ]
-  %12 = sext i32 %.0 to i64
+  %.01 = phi i32 [ 0, %10 ], [ %14, %15 ]
+  %12 = sext i32 %.01 to i64
   %13 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %12
-  store i32 %.0, ptr %13, align 4
-  %14 = add nsw i32 %.0, 1
+  store i32 %.01, ptr %13, align 4
+  %14 = add nsw i32 %.01, 1
   br label %15
 
 15:                                               ; preds = %11
-  %16 = icmp slt i32 %14, 11
+  %16 = icmp slt i32 %14, 10
   br i1 %16, label %11, label %17, !llvm.loop !10
 
 17:                                               ; preds = %15
@@ -841,6 +841,189 @@ define dso_local void @adjacent_one_nested_guard(i32 noundef %0) #0 {
   ret void
 }
 
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @different_trip_count(i32 noundef %0) #0 {
+  %2 = alloca [0 x i32], align 4
+  %3 = alloca [0 x i32], align 4
+  br label %4
+
+4:                                                ; preds = %8, %1
+  %.01 = phi i32 [ 0, %1 ], [ %7, %8 ]
+  %5 = sext i32 %.01 to i64
+  %6 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %5
+  store i32 %.01, ptr %6, align 4
+  %7 = add nsw i32 %.01, 1
+  br label %8
+
+8:                                                ; preds = %4
+  %9 = icmp slt i32 %7, 10
+  br i1 %9, label %4, label %10, !llvm.loop !41
+
+10:                                               ; preds = %8
+  br label %11
+
+11:                                               ; preds = %15, %10
+  %.0 = phi i32 [ 0, %10 ], [ %14, %15 ]
+  %12 = sext i32 %.0 to i64
+  %13 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %12
+  store i32 %.0, ptr %13, align 4
+  %14 = add nsw i32 %.0, 1
+  br label %15
+
+15:                                               ; preds = %11
+  %16 = icmp slt i32 %14, 11
+  br i1 %16, label %11, label %17, !llvm.loop !42
+
+17:                                               ; preds = %15
+  ret void
+}
+
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @dependency_simplify_form(i32 noundef %0) #0 {
+  %2 = alloca [0 x i32], align 4
+  %3 = alloca [0 x i32], align 4
+  br label %4
+
+4:                                                ; preds = %9, %1
+  %.0 = phi i32 [ 0, %1 ], [ %8, %9 ]
+  %5 = add nsw i32 %.0, %.0
+  %6 = sext i32 %.0 to i64
+  %7 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %6
+  store i32 %5, ptr %7, align 4
+  %8 = add nsw i32 %.0, 1
+  br label %9
+
+9:                                                ; preds = %4
+  %10 = icmp slt i32 %8, 10
+  br i1 %10, label %4, label %11, !llvm.loop !43
+
+11:                                               ; preds = %9
+  br label %12
+
+12:                                               ; preds = %21, %11
+  %.01 = phi i32 [ 0, %11 ], [ %20, %21 ]
+  %13 = add nsw i32 %.01, 3
+  %14 = sext i32 %13 to i64
+  %15 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %14
+  %16 = load i32, ptr %15, align 4
+  %17 = add nsw i32 %16, %.01
+  %18 = sext i32 %.01 to i64
+  %19 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %18
+  store i32 %17, ptr %19, align 4
+  %20 = add nsw i32 %.01, 1
+  br label %21
+
+21:                                               ; preds = %12
+  %22 = icmp slt i32 %20, 10
+  br i1 %22, label %12, label %23, !llvm.loop !44
+
+23:                                               ; preds = %21
+  ret void
+}
+
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @dependency(i32 noundef %0) #0 {
+  %2 = alloca [0 x i32], align 4
+  %3 = alloca [0 x i32], align 4
+  br label %4
+
+4:                                                ; preds = %10, %1
+  %.0 = phi i32 [ 0, %1 ], [ %11, %10 ]
+  %5 = icmp slt i32 %.0, 10
+  br i1 %5, label %6, label %12
+
+6:                                                ; preds = %4
+  %7 = add nsw i32 %.0, %.0
+  %8 = sext i32 %.0 to i64
+  %9 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %8
+  store i32 %7, ptr %9, align 4
+  br label %10
+
+10:                                               ; preds = %6
+  %11 = add nsw i32 %.0, 1
+  br label %4, !llvm.loop !45
+
+12:                                               ; preds = %4
+  br label %13
+
+13:                                               ; preds = %23, %12
+  %.1 = phi i32 [ 0, %12 ], [ %24, %23 ]
+  %14 = icmp slt i32 %.1, 10
+  br i1 %14, label %15, label %25
+
+15:                                               ; preds = %13
+  %16 = add nsw i32 %.1, 3
+  %17 = sext i32 %16 to i64
+  %18 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %17
+  %19 = load i32, ptr %18, align 4
+  %20 = add nsw i32 %19, %.1
+  %21 = sext i32 %.1 to i64
+  %22 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %21
+  store i32 %20, ptr %22, align 4
+  br label %23
+
+23:                                               ; preds = %15
+  %24 = add nsw i32 %.1, 1
+  br label %13, !llvm.loop !46
+
+25:                                               ; preds = %13
+  ret void
+}
+
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @nested_dependency(i32 noundef %0) #0 {
+  %2 = alloca [0 x i32], align 4
+  %3 = alloca [0 x i32], align 4
+  %4 = alloca [0 x i32], align 4
+  br label %5
+
+5:                                                ; preds = %16, %1
+  %.01 = phi i32 [ 0, %1 ], [ %15, %16 ]
+  %.0 = phi i32 [ 0, %1 ], [ %11, %16 ]
+  %6 = sext i32 %.01 to i64
+  %7 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %6
+  store i32 %.01, ptr %7, align 4
+  br label %8
+
+8:                                                ; preds = %12, %5
+  %.1 = phi i32 [ %.0, %5 ], [ %11, %12 ]
+  %9 = sext i32 %.1 to i64
+  %10 = getelementptr inbounds [0 x i32], ptr %4, i64 0, i64 %9
+  store i32 %.1, ptr %10, align 4
+  %11 = add nsw i32 %.1, 1
+  br label %12
+
+12:                                               ; preds = %8
+  %13 = icmp slt i32 %11, 10
+  br i1 %13, label %8, label %14, !llvm.loop !47
+
+14:                                               ; preds = %12
+  %15 = add nsw i32 %.01, 1
+  br label %16
+
+16:                                               ; preds = %14
+  %17 = icmp slt i32 %15, 10
+  br i1 %17, label %5, label %18, !llvm.loop !48
+
+18:                                               ; preds = %16
+  br label %19
+
+19:                                               ; preds = %23, %18
+  %.02 = phi i32 [ 0, %18 ], [ %22, %23 ]
+  %20 = sext i32 %.02 to i64
+  %21 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %20
+  store i32 %.02, ptr %21, align 4
+  %22 = add nsw i32 %.02, 1
+  br label %23
+
+23:                                               ; preds = %19
+  %24 = icmp slt i32 %22, 10
+  br i1 %24, label %19, label %25, !llvm.loop !49
+
+25:                                               ; preds = %23
+  ret void
+}
+
 attributes #0 = { noinline nounwind sspstrong uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #1 = { nounwind "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #2 = { nounwind }
@@ -889,3 +1072,12 @@ attributes #2 = { nounwind }
 !38 = distinct !{!38, !7}
 !39 = distinct !{!39, !7}
 !40 = distinct !{!40, !7}
+!41 = distinct !{!41, !7}
+!42 = distinct !{!42, !7}
+!43 = distinct !{!43, !7}
+!44 = distinct !{!44, !7}
+!45 = distinct !{!45, !7}
+!46 = distinct !{!46, !7}
+!47 = distinct !{!47, !7}
+!48 = distinct !{!48, !7}
+!49 = distinct !{!49, !7}

@@ -10,14 +10,20 @@
 //
 // License: GPL3
 //============================================================================//
+#include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/DependenceAnalysis.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/Analysis/PostDominators.h>
 #include <llvm/Analysis/ScalarEvolution.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Instruction.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/PassManager.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
+#include <llvm/Support/Casting.h>
+#include <vector>
 
 #include "Utils.hpp"
 
@@ -316,30 +322,58 @@ private:
       return false;
     }
 
-    utils::debugYesNo("[LF-TCE] Are SCEV equals:\t", (l1scev == l2scev));
+    if (l1scev != l2scev) {
 
-    unsigned l1tc = SE->getSmallConstantTripMultiple(firstLoop, l1scev),
-             l2tc = SE->getSmallConstantTripMultiple(secondLoop, l2scev);
+      unsigned t1 = SE->getSmallConstantTripMultiple(firstLoop, l1scev),
+               t2 = SE->getSmallConstantTripMultiple(secondLoop, l2scev);
 
-    if (l1tc != l2tc) {
-      utils::debug("[LF-TCE] The trip count of the two loops is different.",
+      utils::debug("[LF-TCE] The trip count of the two loops is different: (" +
+                       std::to_string(t1) + " != " + std::to_string(t2) + ").",
                    utils::YELLOW);
+
       return false;
     }
-
-    utils::debug("[LF-TCE] Same BackEdge Count:\t" + std::to_string(l1tc),
-                 utils::BLUE);
 
     return true;
   }
 
   /* ------------------------------------------------------------------------ */
 
-  bool areNegativeDistanceDependentResilient(Loop *firstLoop, Loop *secondLoop,
-                                             DependenceInfo *DI) const {
-    // stop
+  void getLoopInstructionByType(Loop *L, std::vector<Instruction *> *stores,
+                                std::vector<Instruction *> *loads) const {
+    for (BasicBlock *BB : L->getBlocks()) {
+      for (Instruction &I : *BB) {
+        if (isa<StoreInst>(I))
+          stores->push_back(&I);
 
-    return true;
+        else if (isa<LoadInst>(I))
+          loads->push_back(&I);
+      }
+    }
+  }
+
+  bool areNegativeDistanceDependent(Loop *firstLoop, Loop *secondLoop,
+                                    DependenceInfo *DI) const {
+
+    std::vector<Instruction *> FirstLoopStoreInst, FirstLoopLoadInst,
+        SecondLoopStoreInst, SecondLoopLoadInst;
+
+    getLoopInstructionByType(firstLoop, &FirstLoopStoreInst,
+                             &FirstLoopLoadInst);
+    getLoopInstructionByType(secondLoop, &SecondLoopStoreInst,
+                             &SecondLoopLoadInst);
+
+    for (Instruction *Store : FirstLoopStoreInst)
+      for (Instruction *Load : SecondLoopLoadInst)
+        if (DI->depends(Store, Load, true))
+          return true;
+
+    for (Instruction *Load : FirstLoopLoadInst)
+      for (Instruction *Store : SecondLoopStoreInst)
+        if (DI->depends(Store, Load, true))
+          return true;
+
+    return false;
   }
 
   /* ------------------------------------------------------------------------ */
@@ -373,6 +407,11 @@ private:
       return false;
     }
 
+    if (FL->getLoopDepth() != SL->getLoopDepth()) {
+      utils::debug("[LF] Loops at different depth.", utils::YELLOW);
+      return false;
+    }
+
     bool isCoupleAdjacent = adjacentAnalysis(FL, SL);
     utils::debugYesNo("[LF-ADJ] Is couple Adjacent?:\t", isCoupleAdjacent);
 
@@ -382,15 +421,22 @@ private:
     bool isCoupleTCE = areTripCountEquivalent(FL, SL, SE);
     utils::debugYesNo("[LF-TCE] Is couple TCE?: \t", isCoupleTCE);
 
-    bool isCoupleNDDR = areNegativeDistanceDependentResilient(FL, SL, DI);
-    utils::debugYesNo("[LF-NDDR] Is couple NDDR?: \t", isCoupleNDDR);
+    bool isCoupleNotNDD = !areNegativeDistanceDependent(FL, SL, DI);
+    utils::debugYesNo("[LF-NDD] Couple is't NDD: \t", isCoupleNotNDD);
 
-    return isCoupleAdjacent && isCoupleCFE && isCoupleTCE && isCoupleNDDR;
+    return isCoupleAdjacent && isCoupleCFE && isCoupleTCE && isCoupleNotNDD;
   }
 
+  /* ------------------------------------------------------------------------ */
+
+  bool fuseLoops(Loop *firstLoop, Loop *secondLoop) { return false; }
+
+  /* ------------------------------------------------------------------------ */
+
   bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
-    utils::debug("\n\033[1;38:5:15m " \
-    ">=============================================================<\033[0m");
+    utils::debug("\n\033[1;38:5:15m "
+                 ">============================================================"
+                 "=<\033[0m");
     utils::debug("\n[LF] Run on function: " + F.getName().str(), utils::GREEN);
 
     LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
@@ -399,22 +445,39 @@ private:
     ScalarEvolution &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
     DependenceInfo &DI = AM.getResult<DependenceAnalysis>(F);
 
-    const std::vector<Loop *> LoopVect = LI.getTopLevelLoops();
+    SmallVector<Loop *, 8> Worklist;
 
-    if (LoopVect.size() < 2) {
+    for (Loop *TopLevelLoop : LI)
+      for (Loop *L : depth_first(TopLevelLoop))
+        if (L->isInnermost())
+          Worklist.push_back(L);
+
+    if (Worklist.size() < 2) {
       utils::debug("[LF] Less than 2 top-level loops in function.",
                    utils::YELLOW);
       return false;
     }
 
-    Loop *FL = *(++LoopVect.begin());
-    Loop *SL = *LoopVect.begin();
+    bool Transformed = false;
 
-    bool isCoupleValid = analyzeCouple(FL, SL, &DT, &PDT, &SE, &DI);
-    if (isCoupleValid)
-      utils::debug("[LF] Couple is valid.", utils::PURPLE);
+    for (unsigned long i = Worklist.size() - 1; i > 0; --i) {
 
-    return false;
+      bool isCoupleValid =
+          analyzeCouple(Worklist[i], Worklist[i - 1], &DT, &PDT, &SE, &DI);
+
+      if (isCoupleValid)
+        utils::debug("[LF] Couple is valid.", utils::PURPLE);
+
+      bool isCoupleFused =
+          isCoupleValid && fuseLoops(Worklist[i], Worklist[i - 1]);
+
+      if (isCoupleFused)
+        utils::debug("[LF] Couple is fused.", utils::PURPLE);
+
+      Transformed |= isCoupleFused;
+    }
+
+    return Transformed;
   }
 };
 

@@ -18,7 +18,6 @@ void adjacent(int N) {
 
 void adjacent_simplify_form(int N) {
   N = 10;
-  int M = 11;
   int B[] = {}, A[] = {};
   int i = 0, j = 0;
 
@@ -30,7 +29,7 @@ void adjacent_simplify_form(int N) {
   do {
     B[j] = j;
     j++;
-  } while (j < M);
+  } while (j < N);
 }
 
 /* -------------------------------- ADJACENT -------------------------------- */
@@ -314,4 +313,85 @@ void adjacent_one_nested_guard(int N) {
       } while (j < N);
     }
   }
+}
+
+/* ------------------------------- TRIP COUNT ------------------------------- */
+
+void different_trip_count(int N) {
+  N = 10;
+  int M = 11;
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0;
+
+  do {
+    A[i] = i;
+    i++;
+  } while (i < N);
+
+  do {
+    B[j] = j;
+    j++;
+  } while (j < M);
+}
+
+/* ----------------------------- LOOP DEPENDENCY ---------------------------- */
+
+void dependency_simplify_form(int N) {
+  N = 10;
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0;
+
+  do {
+    A[i] = i+i;
+    i++;
+  } while (i < N);
+
+  do {
+    B[j] = A[j + 3] + j;
+    j++;
+  } while (j < N);
+
+}
+
+void dependency(int N) {
+  N = 10;
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0;
+
+  for (i = 0; i < N; i++) {
+    A[i] = i+i;
+  }
+
+  for (i = 0; i < N; i++) {
+    B[i] = A[i + 3] + i;
+  }
+}
+
+void nested_dependency(int N) {
+  N = 10;
+  int B[] = {}, A[] = {}, C[] = {}, D[] = {};
+  int i = 0, j = 0, l = 0, f = 0;
+
+  do {
+    A[i] = i;
+
+    do {
+      C[l] = l;
+      l++;
+    } while (l < N);
+
+    i++;
+  } while (i < N);
+
+  do {
+    B[j] = j;
+
+    // do {
+    //   D[f] = C[f + 3];
+    //   f++;
+    // } while (f < N);
+
+    j++;
+  } while (j < N);
+
 }
