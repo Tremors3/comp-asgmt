@@ -6,7 +6,7 @@
 //    Academic implementation of loop fusion.
 //
 // EXECUTE WITH PASSES:
-//    opt ... -passes="loop(loop-rotate),function(gb-loop-fusion)" ...
+//    -passes="loop(loop-rotate),function(loop-simplify),function(gb-loop-fusion)"
 //
 // License: GPL3
 //============================================================================//
@@ -17,6 +17,7 @@
 #include <llvm/Analysis/PostDominators.h>
 #include <llvm/Analysis/ScalarEvolution.h>
 #include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/PassManager.h>
@@ -28,34 +29,6 @@
 #include "Utils.hpp"
 
 using namespace llvm;
-
-/*
-
-### PUNTO PRIMO - ADJACENCY
-
-1. Se il primo loop è guarded allora non possiamo fonderlo con un secondo senza
-guard perchè il corpo del secondo loop non viene per forza saltato se viene
-saltato il corpo del primo loop.
-
-2. Possiamo fondere i loop solamente in due casi specifici:
-    - se entrambi i loop sono guarded e le guard sono tra loro equivalenti
-(condividono la stessa condizione).
-    - se entrambi i loop non sono guarded.
-
-3. I casi particolari in cui dobbiamo verificare la presenza di istruzioni ("in
-più") rompiscatole sono:
-    - quando il preheader del secondo loop non coincide con l'exit block del
-primo l'oop; in questo caso dobbiamo verificare la presenza di istruzioni che
-non possono essere spostate fuori dai piedi.
-    - NOTA: Quindi non dobbiamo iterare ricorsivamente i blocchi.
-
-4. Il prof non richiede lo spostamento delle istruzioni.
-
-TODO: Capire perche' la prima guard non punta alla seconda in alcuni casi (i.e.
-il penultimo dei casi). O la prima punta a qualcos'altro o quando si prende la
-guard dal secondo loop non si ottiene quella che dovrebbe essere la guard.
-
-*/
 
 namespace graboidpasses::lf {
 
@@ -339,38 +312,64 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
-  void getLoopInstructionByType(Loop *L, std::vector<Instruction *> *stores,
-                                std::vector<Instruction *> *loads) const {
+  void getLoopInstructionByType(Loop *L, std::vector<StoreInst *> *stores,
+                                std::vector<LoadInst *> *loads) const {
     for (BasicBlock *BB : L->getBlocks()) {
       for (Instruction &I : *BB) {
-        if (isa<StoreInst>(I))
-          stores->push_back(&I);
 
-        else if (isa<LoadInst>(I))
-          loads->push_back(&I);
+        if (StoreInst *store = &dyn_cast<StoreInst>(I))
+          stores->push_back(store);
+
+        else if (LoadInst *load = &dyn_cast<LoadInst>(I))
+          loads->push_back(load);
       }
     }
+  }
+
+  bool isDistanceNegative(StoreInst *Store, LoadInst *Load) const {
+    /*
+
+    Abbiamo due alternative per controllare se la distanza e' negativa:
+
+    1. SCALAR EVOLUTION ANALYSIS
+
+    2. CONTROLLO DEI GETELEMENTPTR NELL'IR
+      - Otteniamo la Store del primo loop e la Load del secondo.
+      - Otteniamo la getelementptr della store e della load.
+      - Controlliamo che si riferiscano allo stesso array.
+      - In un qualche modo cerchiamo di capire se ci sono incongruenze tra gli
+        offset utilizzati dalla load e dalla store.
+
+      - In memoria la matrice è serializzata.
+      - Quindi gli elementi si accedono tramite la classica formula:
+        element = (r * dim + col)
+      - Questo spiega la presenza di due getelementptr durante la load e la
+        store.
+
+    */
+
+    return false;
   }
 
   bool areNegativeDistanceDependent(Loop *firstLoop, Loop *secondLoop,
                                     DependenceInfo *DI) const {
 
-    std::vector<Instruction *> FirstLoopStoreInst, FirstLoopLoadInst,
-        SecondLoopStoreInst, SecondLoopLoadInst;
+    std::vector<StoreInst *> FirstLoopStoreInst, SecondLoopStoreInst;
+    std::vector<LoadInst *> FirstLoopLoadInst, SecondLoopLoadInst;
 
     getLoopInstructionByType(firstLoop, &FirstLoopStoreInst,
                              &FirstLoopLoadInst);
     getLoopInstructionByType(secondLoop, &SecondLoopStoreInst,
                              &SecondLoopLoadInst);
 
-    for (Instruction *Store : FirstLoopStoreInst)
-      for (Instruction *Load : SecondLoopLoadInst)
-        if (DI->depends(Store, Load, true))
+    for (StoreInst *Store : FirstLoopStoreInst)
+      for (LoadInst *Load : SecondLoopLoadInst)
+        if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
           return true;
 
-    for (Instruction *Load : FirstLoopLoadInst)
-      for (Instruction *Store : SecondLoopStoreInst)
-        if (DI->depends(Store, Load, true))
+    for (LoadInst *Load : FirstLoopLoadInst)
+      for (StoreInst *Store : SecondLoopStoreInst)
+        if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
           return true;
 
     return false;
@@ -422,21 +421,43 @@ private:
     utils::debugYesNo("[LF-TCE] Is couple TCE?: \t", isCoupleTCE);
 
     bool isCoupleNotNDD = !areNegativeDistanceDependent(FL, SL, DI);
-    utils::debugYesNo("[LF-NDD] Couple is't NDD: \t", isCoupleNotNDD);
+    utils::debugYesNo("[LF-NDD] Couple isn't NDD: \t", isCoupleNotNDD);
 
     return isCoupleAdjacent && isCoupleCFE && isCoupleTCE && isCoupleNotNDD;
   }
 
   /* ------------------------------------------------------------------------ */
 
-  bool fuseLoops(Loop *firstLoop, Loop *secondLoop) { return false; }
+  bool fuseLoops(Loop *firstLoop, Loop *secondLoop) {
+
+    BasicBlock *l2exit = secondLoop->getExitBlock();
+    BasicBlock *l2header = secondLoop->getHeader();
+    BasicBlock *l2latch = secondLoop->getLoopLatch();
+    BasicBlock *l2body = l2header->getNextNode();
+    BasicBlock *l2last = l2latch->getPrevNode();
+
+    BasicBlock *l1header = firstLoop->getHeader();
+    BasicBlock *l1latch = firstLoop->getLoopLatch();
+    BasicBlock *l1body = l1header->getNextNode();
+    BasicBlock *l1last = l1latch->getPrevNode();
+
+    // L1) Last ---> L2) Body
+
+    // L2) Header ---> L2) Latch
+
+    // L1) Latch <--- L2) Last
+
+    // L1) Header ---> L2) Exit
+
+    return true;
+  }
 
   /* ------------------------------------------------------------------------ */
 
   bool runOnFunction(Function &F, FunctionAnalysisManager &AM) {
     utils::debug("\n\033[1;38:5:15m "
                  ">============================================================"
-                 "=<\033[0m");
+                 "========<\033[0m");
     utils::debug("\n[LF] Run on function: " + F.getName().str(), utils::GREEN);
 
     LoopInfo &LI = AM.getResult<LoopAnalysis>(F);
@@ -462,14 +483,16 @@ private:
 
     for (unsigned long i = Worklist.size() - 1; i > 0; --i) {
 
+      unsigned long first = i, second = i - 1;
+
       bool isCoupleValid =
-          analyzeCouple(Worklist[i], Worklist[i - 1], &DT, &PDT, &SE, &DI);
+          analyzeCouple(Worklist[first], Worklist[second], &DT, &PDT, &SE, &DI);
 
       if (isCoupleValid)
         utils::debug("[LF] Couple is valid.", utils::PURPLE);
 
       bool isCoupleFused =
-          isCoupleValid && fuseLoops(Worklist[i], Worklist[i - 1]);
+          isCoupleValid && fuseLoops(Worklist[first], Worklist[second]);
 
       if (isCoupleFused)
         utils::debug("[LF] Couple is fused.", utils::PURPLE);

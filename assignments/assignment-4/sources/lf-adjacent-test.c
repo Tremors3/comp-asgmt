@@ -342,7 +342,7 @@ void dependency_simplify_form(int N) {
   int i = 0, j = 0;
 
   do {
-    A[i] = i+i;
+    A[i] = i + i;
     i++;
   } while (i < N);
 
@@ -350,7 +350,6 @@ void dependency_simplify_form(int N) {
     B[j] = A[j + 3] + j;
     j++;
   } while (j < N);
-
 }
 
 void dependency(int N) {
@@ -359,7 +358,7 @@ void dependency(int N) {
   int i = 0, j = 0;
 
   for (i = 0; i < N; i++) {
-    A[i] = i+i;
+    A[i] = i + i;
   }
 
   for (i = 0; i < N; i++) {
@@ -393,5 +392,79 @@ void nested_dependency(int N) {
 
     j++;
   } while (j < N);
+}
 
+/* ----------------------------- IF BODY TESTING ---------------------------- */
+
+void if_body_test(int N) {
+  N = 10;
+  int B[] = {}, A[] = {}, C[] = {}, D[] = {};
+  int i = 0, j = 0, l = 0, f = 0;
+
+  do {
+    A[i] = 0;
+
+    if (rand()) {
+      A[i] = i;
+    } else {
+      A[i] = -i;
+    }
+
+    i++;
+  } while (i < N);
+
+  do {
+    A[i] = 0;
+
+    if (rand()) {
+      A[i] = i;
+    } else {
+      A[i] = -i;
+    }
+
+    i++;
+  } while (i < N);
+}
+
+/* ------------------------- ARRAY, MATRIX NND TESTS ------------------------ */
+
+void array_ndd_test(int N) {
+  N = 10;
+  int A[] = {};
+
+  int i = 0, j = 0;
+  do {
+
+    A[i] = i + 1;
+
+    i++;
+  } while (i < N);
+
+  do {
+
+    int c = A[j + 3];
+
+    j++;
+  } while (j < N);
+}
+
+void matrix_ndd_test() {
+  int N = 10;
+  int D = N + 3;
+  int A[D][D] = {};
+
+  int i = 0, j = 0;
+  do {
+
+    A[i][i] = i + 1;
+
+    i++;
+  } while (i < N);
+
+  do {
+
+    int d = A[j + 3][j + 3];
+
+    j++;
+  } while (j < N);
 }
