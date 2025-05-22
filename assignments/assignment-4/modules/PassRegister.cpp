@@ -10,7 +10,6 @@
 //
 // License: GPL3
 //============================================================================//
-#include <cstddef>
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/DependenceAnalysis.h>
@@ -317,20 +316,7 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
-  void getLoopInstructionByType(Loop *L, std::vector<StoreInst *> *stores,
-                                std::vector<LoadInst *> *loads) const {
-    for (BasicBlock *BB : L->getBlocks()) {
-      for (Instruction &I : *BB) {
-
-        if (StoreInst *store = dyn_cast<StoreInst>(&I))
-          stores->push_back(store);
-
-        else if (LoadInst *load = dyn_cast<LoadInst>(&I))
-          loads->push_back(load);
-      }
-    }
-  }
-
+  // TO REFACTOR
   int64_t countInductIndexRecursively(Value *curr, std::set<Value *> *visited,
                                       bool &error) const {
 
@@ -409,7 +395,7 @@ private:
         return op1res / op2res;
         break;
       default:
-        utils::debug("The curr instr isn't of type add/sub.");
+        utils::debug("The curr instr isn't of type add/sub/mul/div.");
         error = true;
         return 0;
         break;
@@ -421,7 +407,83 @@ private:
     return 0;
   }
 
-  bool couldBeDistanceNegative(StoreInst *store, LoadInst *load) const {
+  // i.e. (c * D2 * D3 * D4) + (i * D2 * D3) + (j * D3) + k
+
+  int64_t getIndexThroughOperands(Instruction *inst, bool &failed) const {
+    if (failed)
+      return 0;
+
+    int64_t result = 0;
+    std::set<Value *> visited = {};
+    for (auto &oper : inst->operands()) {
+      result += countInductIndexRecursively(oper, &visited, failed);
+    }
+    return result;
+  }
+
+  int64_t getLevelResultRecursively(Instruction *currInst, bool &failed) const {
+    if (failed)
+      return 0;
+
+    int64_t value = 1;
+    for (auto &oper : currInst->operands()) {
+      if (Instruction *next = dyn_cast<Instruction>(oper)) {
+
+        // if Mul
+        if (next->getOpcode() == Instruction::Mul) {
+          value *= getLevelResultRecursively(next, failed);
+        }
+
+        // if SExt
+        else if (isa<SExtInst>(next)) {
+          // getting the current dimension "index"
+          value *= getIndexThroughOperands(next, failed);
+        }
+
+        // if ZExt
+        else if (isa<ZExtInst>(next)) {
+          // getting the current dimension "total size"
+          value *= getIndexThroughOperands(next, failed);
+        }
+
+        else if (isa<GetElementPtrInst>(next) || isa<AllocaInst>(next)) {
+        }
+
+        // if Other Types
+        else {
+          utils::debug("[LF-NDD] -- Unexpected operand Type.", utils::YELLOW);
+          failed = true;
+        }
+      }
+    }
+
+    return value;
+  }
+
+  int64_t iterateElementPtrRecursively(GetElementPtrInst *currLevelGEPI,
+                                       unsigned level, bool &failed,
+                                       Value *&alloca) const {
+    if (failed)
+      return 0;
+
+    // Current Level
+    int64_t currLvlResult = getLevelResultRecursively(currLevelGEPI, failed);
+
+    // Next Levels, Eventually
+    int64_t nextLvlResult = 0;
+    if (GetElementPtrInst *nextLevelGEPI =
+            dyn_cast<GetElementPtrInst>(currLevelGEPI->getPointerOperand())) {
+      nextLvlResult = iterateElementPtrRecursively(nextLevelGEPI, level + 1,
+                                                   failed, alloca);
+    } else if (isa<AllocaInst>(currLevelGEPI->getPointerOperand())) {
+      alloca = currLevelGEPI->getPointerOperand();
+      utils::debug("[LF-NDD] Array Depth: " + std::to_string(level + 1));
+    }
+
+    return currLvlResult + nextLvlResult;
+  }
+
+  bool isDistanceNegative(StoreInst *store, LoadInst *load) const {
 
     /*
      * Abbiamo due alternative per controllare se la distanza e' negativa:
@@ -441,158 +503,63 @@ private:
      *    store.
      */
 
-    GetElementPtrInst *storePtrOp = dyn_cast<GetElementPtrInst>(
+    GetElementPtrInst *storeGEPI = dyn_cast<GetElementPtrInst>(
                           store->getPointerOperand()),
-                      *loadPtrOp = dyn_cast<GetElementPtrInst>(
+                      *loadGEPI = dyn_cast<GetElementPtrInst>(
                           load->getPointerOperand());
 
-    outs() << *storePtrOp << '\n' << *loadPtrOp << '\n';
+    if (!storeGEPI || !loadGEPI) {
+      utils::debug("[LF-NDD] -- One of the pointer operands is not a GEP.",
+                   utils::YELLOW);
+      return false;
+    }
 
-    // if (storePtrOp->getPointerOperand() != loadPtrOp->getPointerOperand()) {
-    //   utils::debug("The load and sore don't refer the same structure.");
-    //   return true;
-    // }
+    bool failed = false;
 
-    if (storePtrOp->getNumOperands() != 2 || loadPtrOp->getNumOperands() != 2) {
-      utils::debug("On of the getelementptr instr hasn't got two operands.");
+    Value *storeAlloca, *loadAlloca;
+
+    int64_t storeResult =
+        iterateElementPtrRecursively(storeGEPI, 0, failed, storeAlloca);
+    int64_t loadResult =
+        iterateElementPtrRecursively(loadGEPI, 0, failed, loadAlloca);
+
+    if (storeAlloca != loadAlloca) {
+      utils::debug(
+          "[LF-NDD] -- The load and store don't refer to the same allocation.",
+          utils::YELLOW);
+      return false;
+    }
+
+    if (failed) {
+      utils::debug("[LF-NDD] -- Operation failed! Assuming negative dependant.",
+                   utils::YELLOW);
       return true;
     }
 
-    // if (SExtInst *sextStore = dyn_cast<SExtInst>(storePtrOp->getOperand(1)))
-    // {
-    //   if (SExtInst *sextLoad = dyn_cast<SExtInst>(loadPtrOp->getOperand(1)))
-    //   {
+    utils::debug("[LF-NDD] New Couple:");
+    utils::debug("[LF-NDD] -- Store Result: " + std::to_string(storeResult));
+    utils::debug("[LF-NDD] -- Load Result: " + std::to_string(loadResult));
 
-    //     // Sets to trace visited istructions
-    //     std::set<Value *> sVisited = {}, lVisited = {};
-
-    //     // Flag to know if something went wrong
-    //     bool failed = false;
-
-    //     // Results
-    //     int64_t storeRes = 0, loadRes = 0;
-
-    //     // Recursively iterating instructions that define the index used by
-    //     the
-    //     // store instruction
-    //     for (auto &oper : sextStore->operands()) {
-    //       storeRes += countInductIndexRecursively(oper, &sVisited, failed);
-    //     }
-    //     outs() << "Store Result: " << storeRes << '\n';
-
-    //     // Recursively iterating instructions that define the index used by
-    //     the
-    //     // load instruction
-    //     for (auto &oper : sextLoad->operands()) {
-    //       loadRes += countInductIndexRecursively(oper, &lVisited, failed);
-    //     }
-
-    //     outs() << "Load Result: " << loadRes << '\n';
-
-    //     // If something went wrong assume negative dependency
-    //     if (failed) {
-    //       utils::debug("Operation failed. (i.e. found an unsupported op
-    //       type)"); return true;
-    //     }
-
-    //     // Checking if the difference is negative
-    //     if ((storeRes - loadRes) < 0) {
-    //       utils::debug("The difference is negative!");
-    //       return true;
-    //     }
-
-    //   } else {
-    //     utils::debug("The Load element access doesn't utilize a sext
-    //     instr."); return true;
-    //   }
-    // } else {
-    //   utils::debug("The Store element access doesn't utilize a sext instr.");
-    //   return true;
-    // }
-
-    int64_t temp = iterateHyperDimensionalArray_Step(loadPtrOp, 0);
-
-    outs() << "Value: " << temp << '\n';
+    if ((storeResult - loadResult) < 0) {
+      utils::debug("[LF-NDD] -- The difference is negative!", utils::YELLOW);
+      return true;
+    }
 
     return false;
   }
 
-  //  (c * D2 * D3 * D4) + (i * D2 * D3) + (j * D3) + k
+  void getLoopInstructionByType(Loop *L, std::vector<StoreInst *> *stores,
+                                std::vector<LoadInst *> *loads) const {
+    for (BasicBlock *BB : L->getBlocks()) {
+      for (Instruction &I : *BB) {
 
-  int64_t getIndexThroughOperands(Instruction *Inst, bool &failed) const {
-    int64_t result = 0;
-    std::set<Value *> visited = {};
-    for (auto &oper : Inst->operands()) {
-      result += countInductIndexRecursively(oper, &visited, failed);
-    }
-    return result;
-  }
+        if (StoreInst *store = dyn_cast<StoreInst>(&I))
+          stores->push_back(store);
 
-  int64_t iterateMul(Instruction *currMul, bool &failed) const {
-
-    int64_t value = 1;
-    for (auto &oper : currMul->operands()) {
-      if (Instruction *next = dyn_cast<Instruction>(oper)) {
-
-        // if Mul
-        if (next->getOpcode() == llvm::Instruction::Mul) {
-          value *= iterateMul(next, failed);
-        }
-
-        // if SExt
-        if (isa<SExtInst>(next)) {
-          // getting the current dimension "index"
-          value *= getIndexThroughOperands(next, failed);
-        }
-
-        // if ZExt
-        if (isa<ZExtInst>(next)) {
-          // get the current dimension "total size"
-          value *= getIndexThroughOperands(next, failed);
-        }
+        else if (LoadInst *load = dyn_cast<LoadInst>(&I))
+          loads->push_back(load);
       }
     }
-
-    return value;
-  }
-
-  int64_t iterateHyperDimensionalArray_Step(GetElementPtrInst *CurrLevelGEPI,
-                                            unsigned level) const {
-    // stop
-
-    bool failed = false;
-    int64_t result = 0;
-
-    for (auto &oper : CurrLevelGEPI->operands()) {
-      if (oper != CurrLevelGEPI->getPointerOperand()) {
-
-        // if directly SExt
-        if (SExtInst *sExt = dyn_cast<SExtInst>(oper)) {
-          result += getIndexThroughOperands(sExt, failed);
-          outs() << "Intermediate sum: " << result << " level " << level
-                 << "°\n";
-        }
-
-        // if directly Mul
-        if (Instruction *mul = dyn_cast<Instruction>(oper)) {
-          if (mul->getOpcode() == llvm::Instruction::Mul) {
-
-            int64_t temp = iterateMul(mul, failed);
-            outs() << "Intermediate sum: " << temp << " at level " << level
-                   << "°\n";
-            result += temp;
-          }
-        }
-      }
-    }
-
-    if (GetElementPtrInst *NextLevelGEPI =
-            dyn_cast<GetElementPtrInst>(CurrLevelGEPI->getPointerOperand())) {
-      return result +
-             iterateHyperDimensionalArray_Step(NextLevelGEPI, level + 1);
-    }
-
-    return result;
   }
 
   bool areNegativeDistanceDependent(Loop *firstLoop, Loop *secondLoop,
@@ -608,14 +575,12 @@ private:
 
     for (StoreInst *Store : FirstLoopStoreInst)
       for (LoadInst *Load : SecondLoopLoadInst)
-        if (DI->depends(Store, Load, true) &&
-            couldBeDistanceNegative(Store, Load))
+        if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
           return true;
 
     for (LoadInst *Load : FirstLoopLoadInst)
       for (StoreInst *Store : SecondLoopStoreInst)
-        if (DI->depends(Store, Load, true) &&
-            couldBeDistanceNegative(Store, Load))
+        if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
           return true;
 
     return false;
@@ -791,13 +756,10 @@ private:
 
     // l2phi->replaceAllUsesWith(l1phi);
 
-    if (false) {
-
-      if (combinedBodyAndLatch(secondLoop)) {
-        utils::debug("[LF-LF] Second loop has the body and the latch combined.",
-                     utils::BLUE);
-        return combinedBodyAndLatchFusion(firstLoop, secondLoop);
-      }
+    if (combinedBodyAndLatch(secondLoop)) {
+      utils::debug("[LF-LF] Second loop has the body and the latch combined.",
+                    utils::BLUE);
+      return combinedBodyAndLatchFusion(firstLoop, secondLoop);
     }
 
     // if (bodySameAsLatch(firstLoop) && !bodySameAsLatch(secondLoop)) {
