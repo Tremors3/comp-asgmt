@@ -18,9 +18,12 @@
 #include <llvm/Analysis/ScalarEvolution.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
+#include <llvm/IR/Constant.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/Operator.h>
 #include <llvm/IR/PassManager.h>
+#include <llvm/IR/Value.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
 #include <llvm/Support/Casting.h>
@@ -317,36 +320,180 @@ private:
     for (BasicBlock *BB : L->getBlocks()) {
       for (Instruction &I : *BB) {
 
-        if (StoreInst *store = &dyn_cast<StoreInst>(I))
+        if (StoreInst *store = dyn_cast<StoreInst>(&I))
           stores->push_back(store);
 
-        else if (LoadInst *load = &dyn_cast<LoadInst>(I))
+        else if (LoadInst *load = dyn_cast<LoadInst>(&I))
           loads->push_back(load);
       }
     }
   }
 
-  bool isDistanceNegative(StoreInst *Store, LoadInst *Load) const {
+  int64_t countInductIndexRecursively(Value *curr, std::set<Value *> *visited,
+                                      bool &error) const {
+
+    // In case of error, exit immediatly
+    if (error)
+      return 0;
+
+    // If the instruction is already visited, exit immediatly
+    if (visited->count(curr) > 0) {
+      utils::debug("Already Visited!");
+      return 0;
+    }
+    visited->insert(curr);
+
+    // Following the "Use-Definition" chain
+    if (Instruction *currInst = dyn_cast<Instruction>(curr)) {
+
+      // In case of a phi node
+      if (PHINode *phi = dyn_cast<PHINode>(currInst)) {
+
+        utils::debug("PHINode!");
+
+        int64_t sum = 0;
+        for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
+          Value *incomingVal = phi->getIncomingValue(i);
+          if (ConstantInt *constant = dyn_cast<ConstantInt>(incomingVal)) {
+            sum += constant->getZExtValue();
+          } else {
+            sum += countInductIndexRecursively(incomingVal, visited, error);
+          }
+        }
+
+        return sum;
+      }
+
+      // If the instruction is not binary, exit immediatly
+      if (!currInst->isBinaryOp()) {
+        utils::debug("The instruction isn't binary!");
+        error = true;
+        return 0;
+      }
+
+      // Getting constant/recursive operators value
+      Value *op1 = currInst->getOperand(0);
+      Value *op2 = currInst->getOperand(1);
+
+      int64_t op1res;
+      if (ConstantInt *constant = dyn_cast<ConstantInt>(op1)) {
+        op1res = constant->getSExtValue();
+      } else {
+        op1res = countInductIndexRecursively(op1, visited, error);
+      }
+
+      int64_t op2res;
+      if (ConstantInt *constant = dyn_cast<ConstantInt>(op2)) {
+        op2res = constant->getSExtValue();
+      } else {
+        op2res = countInductIndexRecursively(op2, visited, error);
+      }
+
+      // Deciding the operation type
+      switch (currInst->getOpcode()) {
+      case Instruction::Add:
+        return op1res + op2res;
+        break;
+      case Instruction::Sub:
+        return op1res - op2res;
+        break;
+      default:
+        utils::debug("The curr instr isn't of type add/sub.");
+        error = true;
+        return 0;
+        break;
+      }
+    }
+
+    utils::debug("Value is not an instruction!");
+    error = true;
+    return 0;
+  }
+
+  bool couldBeDistanceNegative(StoreInst *store, LoadInst *load) const {
+
     /*
+     * Abbiamo due alternative per controllare se la distanza e' negativa:
+     * 1. SCALAR EVOLUTION ANALYSIS
+     *  - guarda github.
+     * 2. CONTROLLO DEI GETELEMENTPTR NELL'IR
+     *  - Otteniamo la Store del primo loop e la Load del secondo.
+     *  - Otteniamo la getelementptr della store e della load.
+     *  - Controlliamo che si riferiscano allo stesso array.
+     *  - In un qualche modo cerchiamo di capire se ci sono incongruenze tra gli
+     *    offset utilizzati dalla load e dalla store.
+     *
+     *  - In memoria la matrice è serializzata.
+     *  - Quindi gli elementi si accedono tramite la classica formula:
+     *    element = (r * dim + col)
+     *  - Questo spiega la presenza di due getelementptr durante la load e la
+     *    store.
+     */
 
-    Abbiamo due alternative per controllare se la distanza e' negativa:
+    GetElementPtrInst *storePtrOp = dyn_cast<GetElementPtrInst>(
+                          store->getPointerOperand()),
+                      *loadPtrOp = dyn_cast<GetElementPtrInst>(
+                          load->getPointerOperand());
 
-    1. SCALAR EVOLUTION ANALYSIS
+    outs() << *storePtrOp << '\n' << *loadPtrOp << '\n';
 
-    2. CONTROLLO DEI GETELEMENTPTR NELL'IR
-      - Otteniamo la Store del primo loop e la Load del secondo.
-      - Otteniamo la getelementptr della store e della load.
-      - Controlliamo che si riferiscano allo stesso array.
-      - In un qualche modo cerchiamo di capire se ci sono incongruenze tra gli
-        offset utilizzati dalla load e dalla store.
+    if (storePtrOp->getPointerOperand() != loadPtrOp->getPointerOperand()) {
+      utils::debug("The load and sore don't refer the same structure.");
+      return true;
+    }
 
-      - In memoria la matrice è serializzata.
-      - Quindi gli elementi si accedono tramite la classica formula:
-        element = (r * dim + col)
-      - Questo spiega la presenza di due getelementptr durante la load e la
-        store.
+    if (storePtrOp->getNumOperands() != 2 || loadPtrOp->getNumOperands() != 2) {
+      utils::debug("On of the getelementptr instr hasn't got two operands.");
+      return true;
+    }
 
-    */
+    if (SExtInst *sextStore = dyn_cast<SExtInst>(storePtrOp->getOperand(1))) {
+      if (SExtInst *sextLoad = dyn_cast<SExtInst>(loadPtrOp->getOperand(1))) {
+
+        // Sets to trace visited istructions
+        std::set<Value *> sVisited = {}, lVisited = {};
+
+        // Flag to know if something went wrong
+        bool failed = false;
+
+        // Results
+        int64_t storeRes = 0, loadRes = 0;
+
+        // Recursively iterating instructions that define the index used by the
+        // store instruction
+        for (auto &oper : sextStore->operands()) {
+          storeRes += countInductIndexRecursively(oper, &sVisited, failed);
+        }
+        outs() << "Store Result: " << storeRes << '\n';
+
+        // Recursively iterating instructions that define the index used by the
+        // load instruction
+        for (auto &oper : sextLoad->operands()) {
+          loadRes += countInductIndexRecursively(oper, &lVisited, failed);
+        }
+
+        outs() << "Load Result: " << loadRes << '\n';
+
+        // If something went wrong assume de dependency is negative
+        if (failed) {
+          utils::debug("Operation failed. (i.e. found an unsupported op type)");
+          return true;
+        }
+
+        // Checking if the difference is negative
+        if ((storeRes - loadRes) < 0) {
+          utils::debug("The difference is negative!");
+          return true;
+        }
+
+      } else {
+        utils::debug("The Load element access doesn't utilize a sext instr.");
+        return true;
+      }
+    } else {
+      utils::debug("The Store element access doesn't utilize a sext instr.");
+      return true;
+    }
 
     return false;
   }
@@ -364,12 +511,14 @@ private:
 
     for (StoreInst *Store : FirstLoopStoreInst)
       for (LoadInst *Load : SecondLoopLoadInst)
-        if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
+        if (DI->depends(Store, Load, true) &&
+            couldBeDistanceNegative(Store, Load))
           return true;
 
     for (LoadInst *Load : FirstLoopLoadInst)
       for (StoreInst *Store : SecondLoopStoreInst)
-        if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
+        if (DI->depends(Store, Load, true) &&
+            couldBeDistanceNegative(Store, Load))
           return true;
 
     return false;
@@ -430,26 +579,39 @@ private:
 
   bool fuseLoops(Loop *firstLoop, Loop *secondLoop) {
 
-    BasicBlock *l2exit = secondLoop->getExitBlock();
-    BasicBlock *l2header = secondLoop->getHeader();
-    BasicBlock *l2latch = secondLoop->getLoopLatch();
-    BasicBlock *l2body = l2header->getNextNode();
-    BasicBlock *l2last = l2latch->getPrevNode();
+    // BasicBlock *l2exit = secondLoop->getExitBlock();
+    // BasicBlock *l2header = secondLoop->getHeader();
+    // BasicBlock *l2latch = secondLoop->getLoopLatch();
+    // BasicBlock *l2body = l2header->getNextNode();
+    // BasicBlock *l2last = l2latch->getPrevNode();
 
-    BasicBlock *l1header = firstLoop->getHeader();
-    BasicBlock *l1latch = firstLoop->getLoopLatch();
-    BasicBlock *l1body = l1header->getNextNode();
-    BasicBlock *l1last = l1latch->getPrevNode();
+    // BasicBlock *l1header = firstLoop->getHeader();
+    // BasicBlock *l1latch = firstLoop->getLoopLatch();
+    // BasicBlock *l1body = l1header->getNextNode();
+    // BasicBlock *l1last;
+    // if (l1body == l1latch) {
+    //   l1last = firstLoop->getExitBlock()->getPrevNode();
+    // } else {
+    //   l1last = l1latch->getPrevNode();
+    // }
 
     // L1) Last ---> L2) Body
-
+    // outs() << "l1header" << *l1header << "\n";
+    // outs() << "l1body" << *l1body << "\n";
+    // outs() << "l1latch" << *l1latch << "\n";
+    // outs() << "l1last" << *l1last << "\n";
     // L2) Header ---> L2) Latch
+    // outs() << "l2header" << *l2header << "\n";
+    // outs() << "l2body" << *l2body << "\n";
+    // outs() << "l2latch" << *l2latch << "\n";
+    // outs() << "l2last" << *l2last << "\n";
+    // outs() << "l2exit" << *l2exit << "\n";
 
     // L1) Latch <--- L2) Last
 
     // L1) Header ---> L2) Exit
 
-    return true;
+    return false;
   }
 
   /* ------------------------------------------------------------------------ */
