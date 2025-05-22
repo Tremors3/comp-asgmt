@@ -10,6 +10,7 @@
 //
 // License: GPL3
 //============================================================================//
+#include <cstddef>
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/DependenceAnalysis.h>
@@ -27,6 +28,7 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/Error.h>
 #include <vector>
 
 #include "Utils.hpp"
@@ -346,10 +348,12 @@ private:
     // Following the "Use-Definition" chain
     if (Instruction *currInst = dyn_cast<Instruction>(curr)) {
 
+      // In case of a SExt or ZExt node
+
       // In case of a phi node
       if (PHINode *phi = dyn_cast<PHINode>(currInst)) {
 
-        utils::debug("PHINode!");
+        // utils::debug("PHINode!");
 
         int64_t sum = 0;
         for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
@@ -357,7 +361,7 @@ private:
           if (ConstantInt *constant = dyn_cast<ConstantInt>(incomingVal)) {
             sum += constant->getZExtValue();
           } else {
-            sum += countInductIndexRecursively(incomingVal, visited, error);
+            // sum += countInductIndexRecursively(incomingVal, visited, error);
           }
         }
 
@@ -396,6 +400,13 @@ private:
         break;
       case Instruction::Sub:
         return op1res - op2res;
+        break;
+      case Instruction::Mul:
+        return op1res * op2res;
+        break;
+      case Instruction::UDiv:
+      case Instruction::SDiv:
+        return op1res / op2res;
         break;
       default:
         utils::debug("The curr instr isn't of type add/sub.");
@@ -437,65 +448,151 @@ private:
 
     outs() << *storePtrOp << '\n' << *loadPtrOp << '\n';
 
-    if (storePtrOp->getPointerOperand() != loadPtrOp->getPointerOperand()) {
-      utils::debug("The load and sore don't refer the same structure.");
-      return true;
-    }
+    // if (storePtrOp->getPointerOperand() != loadPtrOp->getPointerOperand()) {
+    //   utils::debug("The load and sore don't refer the same structure.");
+    //   return true;
+    // }
 
     if (storePtrOp->getNumOperands() != 2 || loadPtrOp->getNumOperands() != 2) {
       utils::debug("On of the getelementptr instr hasn't got two operands.");
       return true;
     }
 
-    if (SExtInst *sextStore = dyn_cast<SExtInst>(storePtrOp->getOperand(1))) {
-      if (SExtInst *sextLoad = dyn_cast<SExtInst>(loadPtrOp->getOperand(1))) {
+    // if (SExtInst *sextStore = dyn_cast<SExtInst>(storePtrOp->getOperand(1)))
+    // {
+    //   if (SExtInst *sextLoad = dyn_cast<SExtInst>(loadPtrOp->getOperand(1)))
+    //   {
 
-        // Sets to trace visited istructions
-        std::set<Value *> sVisited = {}, lVisited = {};
+    //     // Sets to trace visited istructions
+    //     std::set<Value *> sVisited = {}, lVisited = {};
 
-        // Flag to know if something went wrong
-        bool failed = false;
+    //     // Flag to know if something went wrong
+    //     bool failed = false;
 
-        // Results
-        int64_t storeRes = 0, loadRes = 0;
+    //     // Results
+    //     int64_t storeRes = 0, loadRes = 0;
 
-        // Recursively iterating instructions that define the index used by the
-        // store instruction
-        for (auto &oper : sextStore->operands()) {
-          storeRes += countInductIndexRecursively(oper, &sVisited, failed);
-        }
-        outs() << "Store Result: " << storeRes << '\n';
+    //     // Recursively iterating instructions that define the index used by
+    //     the
+    //     // store instruction
+    //     for (auto &oper : sextStore->operands()) {
+    //       storeRes += countInductIndexRecursively(oper, &sVisited, failed);
+    //     }
+    //     outs() << "Store Result: " << storeRes << '\n';
 
-        // Recursively iterating instructions that define the index used by the
-        // load instruction
-        for (auto &oper : sextLoad->operands()) {
-          loadRes += countInductIndexRecursively(oper, &lVisited, failed);
-        }
+    //     // Recursively iterating instructions that define the index used by
+    //     the
+    //     // load instruction
+    //     for (auto &oper : sextLoad->operands()) {
+    //       loadRes += countInductIndexRecursively(oper, &lVisited, failed);
+    //     }
 
-        outs() << "Load Result: " << loadRes << '\n';
+    //     outs() << "Load Result: " << loadRes << '\n';
 
-        // If something went wrong assume de dependency is negative
-        if (failed) {
-          utils::debug("Operation failed. (i.e. found an unsupported op type)");
-          return true;
-        }
+    //     // If something went wrong assume negative dependency
+    //     if (failed) {
+    //       utils::debug("Operation failed. (i.e. found an unsupported op
+    //       type)"); return true;
+    //     }
 
-        // Checking if the difference is negative
-        if ((storeRes - loadRes) < 0) {
-          utils::debug("The difference is negative!");
-          return true;
-        }
+    //     // Checking if the difference is negative
+    //     if ((storeRes - loadRes) < 0) {
+    //       utils::debug("The difference is negative!");
+    //       return true;
+    //     }
 
-      } else {
-        utils::debug("The Load element access doesn't utilize a sext instr.");
-        return true;
-      }
-    } else {
-      utils::debug("The Store element access doesn't utilize a sext instr.");
-      return true;
-    }
+    //   } else {
+    //     utils::debug("The Load element access doesn't utilize a sext
+    //     instr."); return true;
+    //   }
+    // } else {
+    //   utils::debug("The Store element access doesn't utilize a sext instr.");
+    //   return true;
+    // }
+
+    int64_t temp = iterateHyperDimensionalArray_Step(loadPtrOp, 0);
+
+    outs() << "Value: " << temp << '\n';
 
     return false;
+  }
+
+  //  (c * D2 * D3 * D4) + (i * D2 * D3) + (j * D3) + k
+
+  int64_t getIndexThroughOperands(Instruction *Inst, bool &failed) const {
+    int64_t result = 0;
+    std::set<Value *> visited = {};
+    for (auto &oper : Inst->operands()) {
+      result += countInductIndexRecursively(oper, &visited, failed);
+    }
+    return result;
+  }
+
+  int64_t iterateMul(Instruction *currMul, bool &failed) const {
+
+    int64_t value = 1;
+    for (auto &oper : currMul->operands()) {
+      if (Instruction *next = dyn_cast<Instruction>(oper)) {
+
+        // if Mul
+        if (next->getOpcode() == llvm::Instruction::Mul) {
+          value *= iterateMul(next, failed);
+        }
+
+        // if SExt
+        if (isa<SExtInst>(next)) {
+          // getting the current dimension "index"
+          value *= getIndexThroughOperands(next, failed);
+        }
+
+        // if ZExt
+        if (isa<ZExtInst>(next)) {
+          // get the current dimension "total size"
+          value *= getIndexThroughOperands(next, failed);
+        }
+      }
+    }
+
+    return value;
+  }
+
+  int64_t iterateHyperDimensionalArray_Step(GetElementPtrInst *CurrLevelGEPI,
+                                            unsigned level) const {
+    // stop
+
+    bool failed = false;
+    int64_t result = 0;
+
+    for (auto &oper : CurrLevelGEPI->operands()) {
+      if (oper != CurrLevelGEPI->getPointerOperand()) {
+
+        // if directly SExt
+        if (SExtInst *sExt = dyn_cast<SExtInst>(oper)) {
+          result += getIndexThroughOperands(sExt, failed);
+          outs() << "Intermediate sum: " << result << " level " << level
+                 << "°\n";
+        }
+
+        // if directly Mul
+        if (Instruction *mul = dyn_cast<Instruction>(oper)) {
+          if (mul->getOpcode() == llvm::Instruction::Mul) {
+
+            int64_t temp = iterateMul(mul, failed);
+            outs() << "Intermediate sum: " << temp << " at level " << level
+                   << "°\n";
+            result += temp;
+          }
+        }
+      }
+    }
+
+    if (GetElementPtrInst *NextLevelGEPI =
+            dyn_cast<GetElementPtrInst>(CurrLevelGEPI->getPointerOperand())) {
+      return result +
+             iterateHyperDimensionalArray_Step(NextLevelGEPI, level + 1);
+    }
+
+    return result;
   }
 
   bool areNegativeDistanceDependent(Loop *firstLoop, Loop *secondLoop,
@@ -577,36 +674,155 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
+  Instruction *getLoopIncrementInstruction(Loop *L) {
+    PHINode *phi = L->getCanonicalInductionVariable();
+    for (auto &U : phi->incoming_values()) {
+      if (Instruction *phiUser = dyn_cast<Instruction>(U)) {
+        if (L->contains(phiUser)) {
+          return phiUser;
+        }
+      }
+    }
+
+    return nullptr;
+  }
+
+  bool combinedBodyAndLatchFusion(Loop *L1, Loop *L2) {
+
+    PHINode *L1Phi = L1->getCanonicalInductionVariable();
+    Instruction *L1incInst = getLoopIncrementInstruction(L1);
+    BasicBlock *L1exit = L1->getExitBlock();
+
+    PHINode *L2Phi = L2->getCanonicalInductionVariable();
+    Instruction *L2incInst = getLoopIncrementInstruction(L2);
+    BasicBlock *L2exit = L2->getExitBlock();
+    BasicBlock *L2Header = L2->getHeader();
+    BranchInst *L2brancInst = dyn_cast<BranchInst>(L2Header->getTerminator());
+
+    if (!L1Phi || !L2Phi) {
+      utils::debug("Induction variables not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L1incInst || !L2incInst) {
+      utils::debug("Increment instruction not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L1exit || !L2exit) {
+      utils::debug("Exit block not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L2Header) {
+      utils::debug("Second loop header not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L2brancInst) {
+      utils::debug("Second loop branch instruction not found.", utils::YELLOW);
+      return false;
+    }
+
+    // Trova le istruzioni da spostare
+    SmallVector<Instruction *, 8> toMove;
+    for (auto I = L2Header->begin(); I != L2Header->end(); I++) {
+      Instruction *II = dyn_cast<Instruction>(I);
+      if (II != L2Phi && II != L2brancInst && II != L2incInst) {
+        toMove.push_back(II);
+      }
+    }
+
+    // Sposta le istruzioni
+    for (auto I : toMove) {
+      I->moveBefore(L1incInst);
+      I->replaceUsesOfWith(L2Phi, L1Phi);
+    }
+
+    // Cambia l'exit block di L1 con quello di L2
+    for (auto U : predecessors(L1exit)) {
+      for (auto &I : *U) {
+        I.replaceUsesOfWith(L1exit, L2exit);
+      }
+    }
+
+    // Volendo si possono anche cancellare i pezzi che non servono più
+    // L1exit->eraseFromParent();
+    // L2Header->eraseFromParent();
+    // L2->getLoopLatch()->eraseFromParent();
+
+    return true;
+  }
+
+  void singleSameBodyLatchFusion(Loop *L1, Loop *L2) {}
+
+  bool combinedBodyAndLatch(Loop *L) {
+
+    BasicBlock *latch = L->getLoopLatch();
+    BasicBlock *body = L->getHeader()->getNextNode();
+    BasicBlock *last =
+        body == latch ? L->getExitBlock()->getPrevNode() : latch->getPrevNode();
+
+    return (last == body && body == latch);
+  }
+
   bool fuseLoops(Loop *firstLoop, Loop *secondLoop) {
 
     // BasicBlock *l2exit = secondLoop->getExitBlock();
     // BasicBlock *l2header = secondLoop->getHeader();
     // BasicBlock *l2latch = secondLoop->getLoopLatch();
     // BasicBlock *l2body = l2header->getNextNode();
-    // BasicBlock *l2last = l2latch->getPrevNode();
+    // BasicBlock *l2last = l2body == l2latch
+    //                          ? secondLoop->getExitBlock()->getPrevNode()
+    //                          : l2latch->getPrevNode();
+    // PHINode *l2phi = secondLoop->getCanonicalInductionVariable();
 
+    // BasicBlock *l1exit = firstLoop->getExitBlock();
     // BasicBlock *l1header = firstLoop->getHeader();
     // BasicBlock *l1latch = firstLoop->getLoopLatch();
     // BasicBlock *l1body = l1header->getNextNode();
-    // BasicBlock *l1last;
-    // if (l1body == l1latch) {
-    //   l1last = firstLoop->getExitBlock()->getPrevNode();
-    // } else {
-    //   l1last = l1latch->getPrevNode();
+    // BasicBlock *l1last = l1body == l1latch
+    //                          ? firstLoop->getExitBlock()->getPrevNode()
+    //                          : l1latch->getPrevNode();
+    // PHINode *l1phi = firstLoop->getCanonicalInductionVariable();
+
+    // sostituire l'exit del primo loop con quello del secondo loop
+    // l1exit->replaceAllUsesWith(l2exit);
+
+    // l2phi->replaceAllUsesWith(l1phi);
+
+    if (false) {
+
+      if (combinedBodyAndLatch(secondLoop)) {
+        utils::debug("[LF-LF] Second loop has the body and the latch combined.",
+                     utils::BLUE);
+        return combinedBodyAndLatchFusion(firstLoop, secondLoop);
+      }
+    }
+
+    // if (bodySameAsLatch(firstLoop) && !bodySameAsLatch(secondLoop)) {
+    //   singleSameBodyLatchFusion(firstLoop, secondLoop);
     // }
 
     // L1) Last ---> L2) Body
+    // outs() << "l1phi" << *l1phi << "\n";
     // outs() << "l1header" << *l1header << "\n";
     // outs() << "l1body" << *l1body << "\n";
-    // outs() << "l1latch" << *l1latch << "\n";
     // outs() << "l1last" << *l1last << "\n";
+    // outs() << "l1latch" << *l1latch << "\n";
+    // outs() << "l1exit" << *l1exit << "\n";
+
     // L2) Header ---> L2) Latch
+    // outs() << "l2phi" << *l2phi << "\n";
     // outs() << "l2header" << *l2header << "\n";
     // outs() << "l2body" << *l2body << "\n";
-    // outs() << "l2latch" << *l2latch << "\n";
     // outs() << "l2last" << *l2last << "\n";
+    // outs() << "l2latch" << *l2latch << "\n";
     // outs() << "l2exit" << *l2exit << "\n";
 
+    // dyn_cast<Value>(l2header->getFirstNonPHI()->getPrevNode())
+    // ->replaceAllUsesWith(
+    // dyn_cast<Value>(l1header->getFirstNonPHI()->getPrevNode()));
     // L1) Latch <--- L2) Last
 
     // L1) Header ---> L2) Exit
@@ -657,7 +873,7 @@ private:
           isCoupleValid && fuseLoops(Worklist[first], Worklist[second]);
 
       if (isCoupleFused)
-        utils::debug("[LF] Couple is fused.", utils::PURPLE);
+        utils::debug("[LF] Couple fused successfully.", utils::PURPLE);
 
       Transformed |= isCoupleFused;
     }

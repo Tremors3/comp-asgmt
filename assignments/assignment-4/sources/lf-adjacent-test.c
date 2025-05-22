@@ -425,3 +425,65 @@ void if_body_test(int N) {
     i++;
   } while (i < N);
 }
+
+
+/* --------------------------------- FUSION --------------------------------- */
+
+void fusion_candidate_both_different_body_and_latch(int N) {
+  N = 10;
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0, D = 0;
+
+  do {
+    A[i] = i;
+    if (N) {
+      D = 10;
+    }
+    i++;
+  } while (i < N);
+
+  do {
+    B[j] = j;
+    if (N) {
+      D = 10;
+    }
+    j++;
+  } while (j < N);
+}
+
+void fusion_candidate_single_same_body_and_latch(int N) {
+  N = 10;
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0, D = 0;
+
+  do {
+    A[i] = i;
+
+    i++;
+  } while (i < N);
+
+  do {
+    B[j] = j;
+    if (N) {
+      D = 10;
+    }
+    j++;
+  } while (j < N);
+}
+
+void fusion_candidate_both_same_body_and_latch(int N) {
+  N = 10;
+  int B[] = {}, A[] = {};
+  int i = 0, j = 0, D = 0;
+
+  do {
+    A[i] = i;
+
+    i++;
+  } while (i < N);
+
+  do {
+    B[j] = j;
+    j++;
+  } while (j < N);
+}

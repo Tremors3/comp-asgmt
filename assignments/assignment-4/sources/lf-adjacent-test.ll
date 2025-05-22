@@ -87,7 +87,7 @@ define dso_local void @adjacent_simplify_form(i32 noundef %0) #0 {
 define dso_local void @adjacent_guarded(i32 noundef %0) #0 {
   %2 = alloca [0 x i32], align 4
   %3 = alloca [0 x i32], align 4
-  %4 = call i32 @rand() #4
+  %4 = call i32 @rand() #2
   %5 = icmp ne i32 %4, 0
   br i1 %5, label %6, label %15
 
@@ -113,7 +113,7 @@ define dso_local void @adjacent_guarded(i32 noundef %0) #0 {
   br label %15
 
 15:                                               ; preds = %14, %1
-  %16 = call i32 @rand() #4
+  %16 = call i32 @rand() #2
   %17 = icmp ne i32 %16, 0
   br i1 %17, label %18, label %27
 
@@ -200,7 +200,7 @@ define dso_local void @adjacent_guarded_simplify_form(i32 noundef %0) #0 {
 define dso_local void @adjacent_one_guarded(i32 noundef %0) #0 {
   %2 = alloca [0 x i32], align 4
   %3 = alloca [0 x i32], align 4
-  %4 = call i32 @rand() #4
+  %4 = call i32 @rand() #2
   %5 = icmp ne i32 %4, 0
   br i1 %5, label %6, label %15
 
@@ -313,7 +313,7 @@ define dso_local void @adjacent_one_guarded_reverse(i32 noundef %0) #0 {
   br label %4, !llvm.loop !19
 
 11:                                               ; preds = %4
-  %12 = call i32 @rand() #4
+  %12 = call i32 @rand() #2
   %13 = icmp ne i32 %12, 0
   br i1 %13, label %14, label %23
 
@@ -408,7 +408,7 @@ define dso_local void @non_adjacent(i32 noundef %0) #0 {
   br label %4, !llvm.loop !23
 
 11:                                               ; preds = %4
-  %12 = call i32 @rand() #4
+  %12 = call i32 @rand() #2
   br label %13
 
 13:                                               ; preds = %18, %11
@@ -449,7 +449,7 @@ define dso_local void @non_adjacent_simplify_form(i32 noundef %0) #0 {
   br i1 %9, label %4, label %10, !llvm.loop !25
 
 10:                                               ; preds = %8
-  %11 = call i32 @rand() #4
+  %11 = call i32 @rand() #2
   br label %12
 
 12:                                               ; preds = %16, %10
@@ -472,7 +472,7 @@ define dso_local void @non_adjacent_simplify_form(i32 noundef %0) #0 {
 define dso_local void @non_adjacent_guarded(i32 noundef %0) #0 {
   %2 = alloca [0 x i32], align 4
   %3 = alloca [0 x i32], align 4
-  %4 = call i32 @rand() #4
+  %4 = call i32 @rand() #2
   %5 = icmp ne i32 %4, 0
   br i1 %5, label %6, label %15
 
@@ -498,8 +498,8 @@ define dso_local void @non_adjacent_guarded(i32 noundef %0) #0 {
   br label %15
 
 15:                                               ; preds = %14, %1
-  %16 = call i32 @rand() #4
-  %17 = call i32 @rand() #4
+  %16 = call i32 @rand() #2
+  %17 = call i32 @rand() #2
   %18 = icmp ne i32 %17, 0
   br i1 %18, label %19, label %28
 
@@ -554,7 +554,7 @@ define dso_local void @non_adjacent_guarded_simplify_form(i32 noundef %0) #0 {
   br label %13
 
 13:                                               ; preds = %12, %1
-  %14 = call i32 @rand() #4
+  %14 = call i32 @rand() #2
   %15 = icmp sgt i32 10, 0
   br i1 %15, label %16, label %24
 
@@ -1034,7 +1034,7 @@ define dso_local void @if_body_test(i32 noundef %0) #0 {
   %4 = sext i32 %.0 to i64
   %5 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %4
   store i32 0, ptr %5, align 4
-  %6 = call i32 @rand() #4
+  %6 = call i32 @rand() #2
   %7 = icmp ne i32 %6, 0
   br i1 %7, label %8, label %11
 
@@ -1067,7 +1067,7 @@ define dso_local void @if_body_test(i32 noundef %0) #0 {
   %21 = sext i32 %.1 to i64
   %22 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %21
   store i32 0, ptr %22, align 4
-  %23 = call i32 @rand() #4
+  %23 = call i32 @rand() #2
   %24 = icmp ne i32 %23, 0
   br i1 %24, label %25, label %28
 
@@ -1097,111 +1097,140 @@ define dso_local void @if_body_test(i32 noundef %0) #0 {
 }
 
 ; Function Attrs: noinline nounwind sspstrong uwtable
-define dso_local void @array_ndd_test(i32 noundef %0) #0 {
+define dso_local void @fusion_candidate_both_different_body_and_latch(i32 noundef %0) #0 {
   %2 = alloca [0 x i32], align 4
-  br label %3
+  %3 = alloca [0 x i32], align 4
+  br label %4
 
-3:                                                ; preds = %8, %1
-  %.0 = phi i32 [ 0, %1 ], [ %7, %8 ]
-  %4 = add nsw i32 %.0, 1
+4:                                                ; preds = %11, %1
+  %.0 = phi i32 [ 0, %1 ], [ %10, %11 ]
   %5 = sext i32 %.0 to i64
-  %6 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %5
-  store i32 %4, ptr %6, align 4
-  %7 = add nsw i32 %.0, 1
-  br label %8
+  %6 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %5
+  store i32 %.0, ptr %6, align 4
+  %7 = icmp ne i32 10, 0
+  br i1 %7, label %8, label %9
 
-8:                                                ; preds = %3
-  %9 = icmp slt i32 %7, 10
-  br i1 %9, label %3, label %10, !llvm.loop !52
+8:                                                ; preds = %4
+  br label %9
 
-10:                                               ; preds = %8
+9:                                                ; preds = %8, %4
+  %10 = add nsw i32 %.0, 1
   br label %11
 
-11:                                               ; preds = %17, %10
-  %.01 = phi i32 [ 0, %10 ], [ %16, %17 ]
-  %12 = add nsw i32 %.01, 3
-  %13 = sext i32 %12 to i64
-  %14 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %13
-  %15 = load i32, ptr %14, align 4
-  %16 = add nsw i32 %.01, 1
-  br label %17
+11:                                               ; preds = %9
+  %12 = icmp slt i32 %10, 10
+  br i1 %12, label %4, label %13, !llvm.loop !52
 
-17:                                               ; preds = %11
-  %18 = icmp slt i32 %16, 10
-  br i1 %18, label %11, label %19, !llvm.loop !53
+13:                                               ; preds = %11
+  br label %14
 
-19:                                               ; preds = %17
+14:                                               ; preds = %21, %13
+  %.01 = phi i32 [ 0, %13 ], [ %20, %21 ]
+  %15 = sext i32 %.01 to i64
+  %16 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %15
+  store i32 %.01, ptr %16, align 4
+  %17 = icmp ne i32 10, 0
+  br i1 %17, label %18, label %19
+
+18:                                               ; preds = %14
+  br label %19
+
+19:                                               ; preds = %18, %14
+  %20 = add nsw i32 %.01, 1
+  br label %21
+
+21:                                               ; preds = %19
+  %22 = icmp slt i32 %20, 10
+  br i1 %22, label %14, label %23, !llvm.loop !53
+
+23:                                               ; preds = %21
   ret void
 }
 
 ; Function Attrs: noinline nounwind sspstrong uwtable
-define dso_local void @matrix_ndd_test() #0 {
-  %1 = add nsw i32 10, 3
-  %2 = zext i32 %1 to i64
-  %3 = zext i32 %1 to i64
-  %4 = call ptr @llvm.stacksave.p0()
-  %5 = mul nuw i64 %2, %3
-  %6 = alloca i32, i64 %5, align 16
-  %7 = mul nuw i64 %2, %3
-  %8 = mul nuw i64 %7, 4
-  call void @llvm.memset.p0.i64(ptr align 16 %6, i8 0, i64 %8, i1 false)
-  br label %9
+define dso_local void @fusion_candidate_single_same_body_and_latch(i32 noundef %0) #0 {
+  %2 = alloca [0 x i32], align 4
+  %3 = alloca [0 x i32], align 4
+  br label %4
 
-9:                                                ; preds = %17, %0
-  %.01 = phi i32 [ 0, %0 ], [ %16, %17 ]
-  %10 = add nsw i32 %.01, 1
-  %11 = sext i32 %.01 to i64
-  %12 = mul nsw i64 %11, %3
-  %13 = getelementptr inbounds i32, ptr %6, i64 %12
-  %14 = sext i32 %.01 to i64
-  %15 = getelementptr inbounds i32, ptr %13, i64 %14
-  store i32 %10, ptr %15, align 4
-  %16 = add nsw i32 %.01, 1
-  br label %17
+4:                                                ; preds = %8, %1
+  %.0 = phi i32 [ 0, %1 ], [ %7, %8 ]
+  %5 = sext i32 %.0 to i64
+  %6 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %5
+  store i32 %.0, ptr %6, align 4
+  %7 = add nsw i32 %.0, 1
+  br label %8
 
-17:                                               ; preds = %9
-  %18 = icmp slt i32 %16, 10
-  br i1 %18, label %9, label %19, !llvm.loop !54
+8:                                                ; preds = %4
+  %9 = icmp slt i32 %7, 10
+  br i1 %9, label %4, label %10, !llvm.loop !54
 
-19:                                               ; preds = %17
-  br label %20
+10:                                               ; preds = %8
+  br label %11
 
-20:                                               ; preds = %30, %19
-  %.0 = phi i32 [ 0, %19 ], [ %29, %30 ]
-  %21 = add nsw i32 %.0, 3
-  %22 = sext i32 %21 to i64
-  %23 = mul nsw i64 %22, %3
-  %24 = getelementptr inbounds i32, ptr %6, i64 %23
-  %25 = add nsw i32 %.0, 3
-  %26 = sext i32 %25 to i64
-  %27 = getelementptr inbounds i32, ptr %24, i64 %26
-  %28 = load i32, ptr %27, align 4
-  %29 = add nsw i32 %.0, 1
-  br label %30
+11:                                               ; preds = %18, %10
+  %.01 = phi i32 [ 0, %10 ], [ %17, %18 ]
+  %12 = sext i32 %.01 to i64
+  %13 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %12
+  store i32 %.01, ptr %13, align 4
+  %14 = icmp ne i32 10, 0
+  br i1 %14, label %15, label %16
 
-30:                                               ; preds = %20
-  %31 = icmp slt i32 %29, 10
-  br i1 %31, label %20, label %32, !llvm.loop !55
+15:                                               ; preds = %11
+  br label %16
 
-32:                                               ; preds = %30
-  call void @llvm.stackrestore.p0(ptr %4)
+16:                                               ; preds = %15, %11
+  %17 = add nsw i32 %.01, 1
+  br label %18
+
+18:                                               ; preds = %16
+  %19 = icmp slt i32 %17, 10
+  br i1 %19, label %11, label %20, !llvm.loop !55
+
+20:                                               ; preds = %18
   ret void
 }
 
-; Function Attrs: nocallback nofree nosync nounwind willreturn
-declare ptr @llvm.stacksave.p0() #2
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @fusion_candidate_both_same_body_and_latch(i32 noundef %0) #0 {
+  %2 = alloca [0 x i32], align 4
+  %3 = alloca [0 x i32], align 4
+  br label %4
 
-; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
-declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) #3
+4:                                                ; preds = %8, %1
+  %.0 = phi i32 [ 0, %1 ], [ %7, %8 ]
+  %5 = sext i32 %.0 to i64
+  %6 = getelementptr inbounds [0 x i32], ptr %3, i64 0, i64 %5
+  store i32 %.0, ptr %6, align 4
+  %7 = add nsw i32 %.0, 1
+  br label %8
 
-; Function Attrs: nocallback nofree nosync nounwind willreturn
-declare void @llvm.stackrestore.p0(ptr) #2
+8:                                                ; preds = %4
+  %9 = icmp slt i32 %7, 10
+  br i1 %9, label %4, label %10, !llvm.loop !56
+
+10:                                               ; preds = %8
+  br label %11
+
+11:                                               ; preds = %15, %10
+  %.01 = phi i32 [ 0, %10 ], [ %14, %15 ]
+  %12 = sext i32 %.01 to i64
+  %13 = getelementptr inbounds [0 x i32], ptr %2, i64 0, i64 %12
+  store i32 %.01, ptr %13, align 4
+  %14 = add nsw i32 %.01, 1
+  br label %15
+
+15:                                               ; preds = %11
+  %16 = icmp slt i32 %14, 10
+  br i1 %16, label %11, label %17, !llvm.loop !57
+
+17:                                               ; preds = %15
+  ret void
+}
 
 attributes #0 = { noinline nounwind sspstrong uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #1 = { nounwind "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
-attributes #2 = { nocallback nofree nosync nounwind willreturn }
-attributes #3 = { nocallback nofree nounwind willreturn memory(argmem: write) }
-attributes #4 = { nounwind }
+attributes #2 = { nounwind }
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}
@@ -1262,3 +1291,5 @@ attributes #4 = { nounwind }
 !53 = distinct !{!53, !7}
 !54 = distinct !{!54, !7}
 !55 = distinct !{!55, !7}
+!56 = distinct !{!56, !7}
+!57 = distinct !{!57, !7}
