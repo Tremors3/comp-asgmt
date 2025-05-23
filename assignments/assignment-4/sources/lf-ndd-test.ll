@@ -223,6 +223,283 @@ define dso_local void @matrix_ndd_test() #0 {
   ret void
 }
 
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @matrix_ndd_test_non_so_come_chiamarlo() #0 {
+  %1 = add nsw i32 10, 3
+  %2 = add nsw i32 %1, 3
+  %3 = zext i32 %2 to i64
+  %4 = sub nsw i32 %1, 1
+  %5 = zext i32 %4 to i64
+  %6 = mul nsw i32 %1, 4
+  %7 = zext i32 %6 to i64
+  %8 = sdiv i32 %1, 10
+  %9 = zext i32 %8 to i64
+  %10 = call ptr @llvm.stacksave.p0()
+  %11 = mul nuw i64 %3, %5
+  %12 = mul nuw i64 %11, %7
+  %13 = mul nuw i64 %12, %9
+  %14 = alloca i32, i64 %13, align 16
+  %15 = mul nuw i64 %3, %5
+  %16 = mul nuw i64 %15, %7
+  %17 = mul nuw i64 %16, %9
+  %18 = mul nuw i64 %17, 4
+  call void @llvm.memset.p0.i64(ptr align 16 %14, i8 0, i64 %18, i1 false)
+  br label %19
+
+19:                                               ; preds = %51, %0
+  %.07 = phi i32 [ 0, %0 ], [ %50, %51 ]
+  br label %20
+
+20:                                               ; preds = %47, %19
+  %.05 = phi i32 [ 0, %19 ], [ %46, %47 ]
+  br label %21
+
+21:                                               ; preds = %43, %20
+  %.04 = phi i32 [ 0, %20 ], [ %42, %43 ]
+  br label %22
+
+22:                                               ; preds = %39, %21
+  %.03 = phi i32 [ 0, %21 ], [ %38, %39 ]
+  %23 = add nsw i32 %.07, 1
+  %24 = sext i32 %.07 to i64
+  %25 = mul nuw i64 %5, %7
+  %26 = mul nuw i64 %25, %9
+  %27 = mul nsw i64 %24, %26
+  %28 = getelementptr inbounds i32, ptr %14, i64 %27
+  %29 = sext i32 %.05 to i64
+  %30 = mul nuw i64 %7, %9
+  %31 = mul nsw i64 %29, %30
+  %32 = getelementptr inbounds i32, ptr %28, i64 %31
+  %33 = sext i32 %.04 to i64
+  %34 = mul nsw i64 %33, %9
+  %35 = getelementptr inbounds i32, ptr %32, i64 %34
+  %36 = sext i32 %.03 to i64
+  %37 = getelementptr inbounds i32, ptr %35, i64 %36
+  store i32 %23, ptr %37, align 4
+  %38 = add nsw i32 %.03, 1
+  br label %39
+
+39:                                               ; preds = %22
+  %40 = icmp slt i32 %38, 10
+  br i1 %40, label %22, label %41, !llvm.loop !15
+
+41:                                               ; preds = %39
+  %42 = add nsw i32 %.04, 1
+  br label %43
+
+43:                                               ; preds = %41
+  %44 = icmp slt i32 %42, 10
+  br i1 %44, label %21, label %45, !llvm.loop !16
+
+45:                                               ; preds = %43
+  %46 = add nsw i32 %.05, 1
+  br label %47
+
+47:                                               ; preds = %45
+  %48 = icmp slt i32 %46, 10
+  br i1 %48, label %20, label %49, !llvm.loop !17
+
+49:                                               ; preds = %47
+  %50 = add nsw i32 %.07, 1
+  br label %51
+
+51:                                               ; preds = %49
+  %52 = icmp slt i32 %50, 10
+  br i1 %52, label %19, label %53, !llvm.loop !18
+
+53:                                               ; preds = %51
+  br label %54
+
+54:                                               ; preds = %86, %53
+  %.06 = phi i32 [ 0, %53 ], [ %85, %86 ]
+  br label %55
+
+55:                                               ; preds = %82, %54
+  %.02 = phi i32 [ 0, %54 ], [ %81, %82 ]
+  br label %56
+
+56:                                               ; preds = %78, %55
+  %.01 = phi i32 [ 0, %55 ], [ %77, %78 ]
+  br label %57
+
+57:                                               ; preds = %74, %56
+  %.0 = phi i32 [ 0, %56 ], [ %73, %74 ]
+  %58 = sext i32 %.06 to i64
+  %59 = mul nuw i64 %5, %7
+  %60 = mul nuw i64 %59, %9
+  %61 = mul nsw i64 %58, %60
+  %62 = getelementptr inbounds i32, ptr %14, i64 %61
+  %63 = sext i32 %.02 to i64
+  %64 = mul nuw i64 %7, %9
+  %65 = mul nsw i64 %63, %64
+  %66 = getelementptr inbounds i32, ptr %62, i64 %65
+  %67 = sext i32 %.01 to i64
+  %68 = mul nsw i64 %67, %9
+  %69 = getelementptr inbounds i32, ptr %66, i64 %68
+  %70 = sext i32 %.0 to i64
+  %71 = getelementptr inbounds i32, ptr %69, i64 %70
+  %72 = load i32, ptr %71, align 4
+  %73 = add nsw i32 %.0, 1
+  br label %74
+
+74:                                               ; preds = %57
+  %75 = icmp slt i32 %73, 10
+  br i1 %75, label %57, label %76, !llvm.loop !19
+
+76:                                               ; preds = %74
+  %77 = add nsw i32 %.01, 1
+  br label %78
+
+78:                                               ; preds = %76
+  %79 = icmp slt i32 %77, 10
+  br i1 %79, label %56, label %80, !llvm.loop !20
+
+80:                                               ; preds = %78
+  %81 = add nsw i32 %.02, 1
+  br label %82
+
+82:                                               ; preds = %80
+  %83 = icmp slt i32 %81, 10
+  br i1 %83, label %55, label %84, !llvm.loop !21
+
+84:                                               ; preds = %82
+  %85 = add nsw i32 %.06, 2
+  br label %86
+
+86:                                               ; preds = %84
+  %87 = mul nsw i32 10, 2
+  %88 = icmp slt i32 %85, %87
+  br i1 %88, label %54, label %89, !llvm.loop !22
+
+89:                                               ; preds = %86
+  call void @llvm.stackrestore.p0(ptr %10)
+  ret void
+}
+
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @matrix_ndd_test_multiple_matrices() #0 {
+  %1 = add nsw i32 10, 3
+  %2 = zext i32 %1 to i64
+  %3 = zext i32 %1 to i64
+  %4 = zext i32 %1 to i64
+  %5 = zext i32 %1 to i64
+  %6 = call ptr @llvm.stacksave.p0()
+  %7 = mul nuw i64 %2, %3
+  %8 = mul nuw i64 %7, %4
+  %9 = mul nuw i64 %8, %5
+  %10 = alloca i32, i64 %9, align 16
+  %11 = mul nuw i64 %2, %3
+  %12 = mul nuw i64 %11, %4
+  %13 = mul nuw i64 %12, %5
+  %14 = mul nuw i64 %13, 4
+  call void @llvm.memset.p0.i64(ptr align 16 %10, i8 0, i64 %14, i1 false)
+  %15 = zext i32 %1 to i64
+  %16 = zext i32 %1 to i64
+  %17 = mul nuw i64 %15, %16
+  %18 = alloca i32, i64 %17, align 16
+  %19 = zext i32 %1 to i64
+  %20 = zext i32 %1 to i64
+  %21 = mul nuw i64 %19, %20
+  %22 = alloca i32, i64 %21, align 16
+  br label %23
+
+23:                                               ; preds = %62, %0
+  %.03 = phi i32 [ 0, %0 ], [ %61, %62 ]
+  %.0 = phi i32 [ 0, %0 ], [ %60, %62 ]
+  %24 = add nsw i32 %.03, 1
+  %25 = sext i32 %.03 to i64
+  %26 = mul nuw i64 %3, %4
+  %27 = mul nuw i64 %26, %5
+  %28 = mul nsw i64 %25, %27
+  %29 = getelementptr inbounds i32, ptr %10, i64 %28
+  %30 = sext i32 %.03 to i64
+  %31 = mul nuw i64 %4, %5
+  %32 = mul nsw i64 %30, %31
+  %33 = getelementptr inbounds i32, ptr %29, i64 %32
+  %34 = sext i32 %.03 to i64
+  %35 = mul nsw i64 %34, %5
+  %36 = getelementptr inbounds i32, ptr %33, i64 %35
+  %37 = sext i32 %.03 to i64
+  %38 = getelementptr inbounds i32, ptr %36, i64 %37
+  store i32 %24, ptr %38, align 4
+  %39 = mul nsw i32 %.03, 2
+  %40 = sext i32 %.03 to i64
+  %41 = mul nsw i64 %40, %16
+  %42 = getelementptr inbounds i32, ptr %18, i64 %41
+  %43 = sext i32 %.03 to i64
+  %44 = getelementptr inbounds i32, ptr %42, i64 %43
+  store i32 %39, ptr %44, align 4
+  %45 = sext i32 %.03 to i64
+  %46 = mul nuw i64 %3, %4
+  %47 = mul nuw i64 %46, %5
+  %48 = mul nsw i64 %45, %47
+  %49 = getelementptr inbounds i32, ptr %10, i64 %48
+  %50 = sext i32 %.03 to i64
+  %51 = mul nuw i64 %4, %5
+  %52 = mul nsw i64 %50, %51
+  %53 = getelementptr inbounds i32, ptr %49, i64 %52
+  %54 = sext i32 %.03 to i64
+  %55 = mul nsw i64 %54, %5
+  %56 = getelementptr inbounds i32, ptr %53, i64 %55
+  %57 = sext i32 %.03 to i64
+  %58 = getelementptr inbounds i32, ptr %56, i64 %57
+  %59 = load i32, ptr %58, align 4
+  %60 = add nsw i32 %.0, %59
+  %61 = add nsw i32 %.03, 1
+  br label %62
+
+62:                                               ; preds = %23
+  %63 = icmp slt i32 %61, 10
+  br i1 %63, label %23, label %64, !llvm.loop !23
+
+64:                                               ; preds = %62
+  br label %65
+
+65:                                               ; preds = %95, %64
+  %.02 = phi i32 [ 0, %64 ], [ %93, %95 ]
+  %.01 = phi i32 [ 0, %64 ], [ %94, %95 ]
+  %66 = sext i32 %.02 to i64
+  %67 = mul nuw i64 %3, %4
+  %68 = mul nuw i64 %67, %5
+  %69 = mul nsw i64 %66, %68
+  %70 = getelementptr inbounds i32, ptr %10, i64 %69
+  %71 = sext i32 %.02 to i64
+  %72 = mul nuw i64 %4, %5
+  %73 = mul nsw i64 %71, %72
+  %74 = getelementptr inbounds i32, ptr %70, i64 %73
+  %75 = sext i32 %.02 to i64
+  %76 = mul nsw i64 %75, %5
+  %77 = getelementptr inbounds i32, ptr %74, i64 %76
+  %78 = sext i32 %.02 to i64
+  %79 = getelementptr inbounds i32, ptr %77, i64 %78
+  %80 = load i32, ptr %79, align 4
+  %81 = sext i32 %.01 to i64
+  %82 = mul nsw i64 %81, %16
+  %83 = getelementptr inbounds i32, ptr %18, i64 %82
+  %84 = sext i32 %.02 to i64
+  %85 = getelementptr inbounds i32, ptr %83, i64 %84
+  %86 = load i32, ptr %85, align 4
+  %87 = mul nsw i32 %.02, 2
+  %88 = sext i32 %61 to i64
+  %89 = mul nsw i64 %88, %20
+  %90 = getelementptr inbounds i32, ptr %22, i64 %89
+  %91 = sext i32 %61 to i64
+  %92 = getelementptr inbounds i32, ptr %90, i64 %91
+  store i32 %87, ptr %92, align 4
+  %93 = add nsw i32 %.02, 1
+  %94 = add nsw i32 %.01, 2
+  br label %95
+
+95:                                               ; preds = %65
+  %96 = mul nsw i32 10, 2
+  %97 = icmp slt i32 %93, %96
+  br i1 %97, label %65, label %98, !llvm.loop !24
+
+98:                                               ; preds = %95
+  call void @llvm.stackrestore.p0(ptr %6)
+  ret void
+}
+
 attributes #0 = { noinline nounwind sspstrong uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #1 = { nocallback nofree nosync nounwind willreturn }
 attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
@@ -245,3 +522,13 @@ attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
 !12 = distinct !{!12, !7}
 !13 = distinct !{!13, !7}
 !14 = distinct !{!14, !7}
+!15 = distinct !{!15, !7}
+!16 = distinct !{!16, !7}
+!17 = distinct !{!17, !7}
+!18 = distinct !{!18, !7}
+!19 = distinct !{!19, !7}
+!20 = distinct !{!20, !7}
+!21 = distinct !{!21, !7}
+!22 = distinct !{!22, !7}
+!23 = distinct !{!23, !7}
+!24 = distinct !{!24, !7}

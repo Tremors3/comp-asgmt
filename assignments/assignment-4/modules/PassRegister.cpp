@@ -784,6 +784,99 @@ private:
     return true;
   }
 
+  bool differentBodyAndLatchFusion(Loop *L1, Loop *L2) {
+    PHINode *L1Phi = L1->getCanonicalInductionVariable();
+    Instruction *L1incInst = getLoopIncrementInstruction(L1);
+    BasicBlock *L1exit = L1->getExitBlock();
+    BasicBlock *L1Header = L1->getHeader();
+    BranchInst *L1BranchInst = dyn_cast<BranchInst>(L1Header->getTerminator());
+    BasicBlock *L1latch = L1->getLoopLatch();
+
+    PHINode *L2Phi = L2->getCanonicalInductionVariable();
+    Instruction *L2incInst = getLoopIncrementInstruction(L2);
+    BasicBlock *L2exit = L2->getExitBlock();
+    BasicBlock *L2Header = L2->getHeader();
+    BranchInst *L2branchInst = dyn_cast<BranchInst>(L2Header->getTerminator());
+    BasicBlock *L2latch = L2->getLoopLatch();
+
+    if (!L1Phi || !L2Phi) {
+      utils::debug("Induction variables not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L1incInst || !L2incInst) {
+      utils::debug("Increment instruction not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L1exit || !L2exit) {
+      utils::debug("Exit block not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L2Header) {
+      utils::debug("Second loop header not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L2branchInst) {
+      utils::debug("Second loop branch instruction not found.", utils::YELLOW);
+      return false;
+    }
+
+    SmallVector<Instruction *, 8> instToMove;
+    for (auto I = L2Header->begin(); I != L2Header->end(); I++) {
+      Instruction *II = dyn_cast<Instruction>(I);
+      if (II != L2Phi && II != L2branchInst && II != L2incInst) {
+        instToMove.push_back(II);
+      }
+    }
+
+    // Sposta le istruzioni
+    for (auto I : instToMove) {
+      I->moveBefore(L1incInst);
+      I->replaceUsesOfWith(L2Phi, L1Phi);
+    }
+
+    BasicBlock *L1IncInstBB = L1incInst->getParent();
+    BranchInst *L1IncInstBBBranchInst = dyn_cast<BranchInst>(L1IncInstBB->getTerminator());
+
+    L2incInst->moveAfter(L2Phi);
+    L1IncInstBBBranchInst->replaceAllUsesWith(L2branchInst);
+
+    L2branchInst->moveBefore(L1IncInstBBBranchInst);
+    L1IncInstBBBranchInst->eraseFromParent();
+
+    SmallVector<BasicBlock *, 8> BBToMove;
+    for (auto S : L2branchInst->successors()) {
+      BBToMove.push_back(S);
+    }
+
+    for (auto BB : BBToMove) {
+
+      for (auto succ : successors(BB)) {
+        if (!std::count(BBToMove.begin(), BBToMove.end(), succ)) {
+          for (auto &inst : *BB) {
+            inst.replaceUsesOfWith(BB->getSingleSuccessor(), L1latch);
+          }
+        }
+      }
+      BB->moveBefore(L1latch);
+    }
+
+    BranchInst::Create(L2latch, L2Header);
+
+    // Cambia l'exit block di L1 con quello di L2
+    for (auto U : predecessors(L1exit)) {
+
+      for (auto &I : *U) {
+        I.replaceUsesOfWith(L1exit, L2exit);
+      }
+    }
+
+    return true;
+  }
+
   bool combinedBodyAndLatch(Loop *L) {
 
     BasicBlock *latch = L->getLoopLatch();
@@ -795,31 +888,6 @@ private:
   }
 
   bool fuseLoops(Loop *firstLoop, Loop *secondLoop) {
-
-    // BasicBlock *l2exit = secondLoop->getExitBlock();
-    // BasicBlock *l2header = secondLoop->getHeader();
-    // BasicBlock *l2latch = secondLoop->getLoopLatch();
-    // BasicBlock *l2body = l2header->getNextNode();
-    // BasicBlock *l2last = l2body == l2latch
-    //                          ? secondLoop->getExitBlock()->getPrevNode()
-    //                          : l2latch->getPrevNode();
-    // PHINode *l2phi = secondLoop->getCanonicalInductionVariable();
-
-    // BasicBlock *l1exit = firstLoop->getExitBlock();
-    // BasicBlock *l1header = firstLoop->getHeader();
-    // BasicBlock *l1latch = firstLoop->getLoopLatch();
-    // BasicBlock *l1body = l1header->getNextNode();
-    // BasicBlock *l1last = l1body == l1latch
-    //                          ? firstLoop->getExitBlock()->getPrevNode()
-    //                          : l1latch->getPrevNode();
-    // PHINode *l1phi = firstLoop->getCanonicalInductionVariable();
-
-    // sostituire l'exit del primo loop con quello del secondo loop
-    // l1exit->replaceAllUsesWith(l2exit);
-
-    // l2phi->replaceAllUsesWith(l1phi);
-
-    // COMMENTATO
     if (combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Second loop has the body and the latch combined.",
                    utils::BLUE);
@@ -832,33 +900,11 @@ private:
       return singleCombinedBodyAndLatchFusion(firstLoop, secondLoop);
     }
 
-    // if (bodySameAsLatch(firstLoop) && !bodySameAsLatch(secondLoop)) {
-    //   singleSameBodyLatchFusion(firstLoop, secondLoop);
-    // }
-
-    // L1) Last ---> L2) Body
-    // outs() << "l1phi" << *l1phi << "\n";
-    // outs() << "l1header" << *l1header << "\n";
-    // outs() << "l1body" << *l1body << "\n";
-    // outs() << "l1last" << *l1last << "\n";
-    // outs() << "l1latch" << *l1latch << "\n";
-    // outs() << "l1exit" << *l1exit << "\n";
-
-    // L2) Header ---> L2) Latch
-    // outs() << "l2phi" << *l2phi << "\n";
-    // outs() << "l2header" << *l2header << "\n";
-    // outs() << "l2body" << *l2body << "\n";
-    // outs() << "l2last" << *l2last << "\n";
-    // outs() << "l2latch" << *l2latch << "\n";
-    // outs() << "l2exit" << *l2exit << "\n";
-
-    // dyn_cast<Value>(l2header->getFirstNonPHI()->getPrevNode())
-    // ->replaceAllUsesWith(
-    // dyn_cast<Value>(l1header->getFirstNonPHI()->getPrevNode()));
-    // L1) Latch <--- L2) Last
-
-    // L1) Header ---> L2) Exit
-
+    if (!combinedBodyAndLatch(firstLoop) && !combinedBodyAndLatch(secondLoop)) {
+      utils::debug("[LF-LF] Both loops have the body and the latch different.",
+                   utils::BLUE);
+      return differentBodyAndLatchFusion(firstLoop, secondLoop);
+    }
     return false;
   }
 
@@ -906,9 +952,9 @@ private:
 
       if (isCoupleFused) {
         utils::debug("[LF] Couple fused successfully.", utils::PURPLE);
-        outs() << "\n";
-        F.print(outs());
-        outs() << "\n";
+        // outs() << "\n";
+        // F.print(outs());
+        // outs() << "\n";
       }
 
       Transformed |= isCoupleFused;
