@@ -19,6 +19,7 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Constant.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Operator.h>
@@ -317,11 +318,11 @@ private:
   /* ------------------------------------------------------------------------ */
 
   // TO REFACTOR
-  int64_t countInductIndexRecursively(Value *curr, std::set<Value *> *visited,
-                                      bool &error) const {
+  int64_t resolveIndexValue(Value *curr, std::set<Value *> *visited,
+                            bool &failed) const {
 
     // In case of error, exit immediatly
-    if (error)
+    if (failed)
       return 0;
 
     // If the instruction is already visited, exit immediatly
@@ -347,7 +348,7 @@ private:
           if (ConstantInt *constant = dyn_cast<ConstantInt>(incomingVal)) {
             sum += constant->getZExtValue();
           } else {
-            // sum += countInductIndexRecursively(incomingVal, visited, error);
+            // sum += countInductIndexRecursively(incomingVal, visited, failed);
           }
         }
 
@@ -357,7 +358,7 @@ private:
       // If the instruction is not binary, exit immediatly
       if (!currInst->isBinaryOp()) {
         utils::debug("The instruction isn't binary!");
-        error = true;
+        failed = true;
         return 0;
       }
 
@@ -369,14 +370,14 @@ private:
       if (ConstantInt *constant = dyn_cast<ConstantInt>(op1)) {
         op1res = constant->getSExtValue();
       } else {
-        op1res = countInductIndexRecursively(op1, visited, error);
+        op1res = resolveIndexValue(op1, visited, failed);
       }
 
       int64_t op2res;
       if (ConstantInt *constant = dyn_cast<ConstantInt>(op2)) {
         op2res = constant->getSExtValue();
       } else {
-        op2res = countInductIndexRecursively(op2, visited, error);
+        op2res = resolveIndexValue(op2, visited, failed);
       }
 
       // Deciding the operation type
@@ -396,63 +397,63 @@ private:
         break;
       default:
         utils::debug("The curr instr isn't of type add/sub/mul/div.");
-        error = true;
+        failed = true;
         return 0;
         break;
       }
     }
 
     utils::debug("Value is not an instruction!");
-    error = true;
+    failed = true;
     return 0;
   }
 
-  // i.e. (c * D2 * D3 * D4) + (i * D2 * D3) + (j * D3) + k
-
-  int64_t getIndexThroughOperands(Instruction *inst, bool &failed) const {
+  int64_t extractIndex(Instruction *inst, bool &failed) const {
     if (failed)
       return 0;
 
     int64_t result = 0;
     std::set<Value *> visited = {};
     for (auto &oper : inst->operands()) {
-      result += countInductIndexRecursively(oper, &visited, failed);
+      result += resolveIndexValue(oper, &visited, failed);
     }
     return result;
   }
 
-  int64_t getLevelResultRecursively(Instruction *currInst, bool &failed) const {
+  // i.e: ... (c * D2 * D3 * D4) + (i * D2 * D3) + (j * D3) + k
+
+  int64_t computeOperandProduct(Instruction *current, bool &failed) const {
     if (failed)
       return 0;
 
     int64_t value = 1;
-    for (auto &oper : currInst->operands()) {
-      if (Instruction *next = dyn_cast<Instruction>(oper)) {
 
-        // if Mul
-        if (next->getOpcode() == Instruction::Mul) {
-          value *= getLevelResultRecursively(next, failed);
-        }
+    // current is Mul
+    if (current->getOpcode() == Instruction::Mul) {
+      for (auto &oper : current->operands()) {
+        Value *val = oper.get();
+        if (Instruction *next = dyn_cast<Instruction>(val)) {
 
-        // if SExt
-        else if (isa<SExtInst>(next)) {
-          // getting the current dimension "index"
-          value *= getIndexThroughOperands(next, failed);
-        }
+          // next is Mul
+          if (next->getOpcode() == Instruction::Mul) {
+            value *= computeOperandProduct(next, failed);
+          }
 
-        // if ZExt
-        else if (isa<ZExtInst>(next)) {
-          // getting the current dimension "total size"
-          value *= getIndexThroughOperands(next, failed);
-        }
+          // next is SExt
+          else if (isa<SExtInst>(next)) {
+            // getting the current dimension "index"
+            value *= extractIndex(next, failed);
+          }
 
-        else if (isa<GetElementPtrInst>(next) || isa<AllocaInst>(next)) {
-        }
+          // next is ZExt
+          else if (isa<ZExtInst>(next)) {
+            // getting the current dimension "total size"
+            value *= extractIndex(next, failed);
+          }
 
-        // if Other Types
-        else {
-          utils::debug("[LF-NDD] -- Unexpected operand Type.", utils::YELLOW);
-          failed = true;
+          // next is ConstantInt
+        } else if (ConstantInt *CI = dyn_cast<ConstantInt>(val)) {
+          return CI->getSExtValue();
         }
       }
     }
@@ -460,68 +461,71 @@ private:
     return value;
   }
 
-  int64_t iterateElementPtrRecursively(GetElementPtrInst *currLevelGEPI,
-                                       unsigned level, bool &failed,
-                                       Value *&alloca) const {
+  int64_t computeGEPLevelOffset(GetElementPtrInst *gep, bool &failed) const {
     if (failed)
       return 0;
 
-    // Current Level
-    int64_t currLvlResult = getLevelResultRecursively(currLevelGEPI, failed);
+    for (auto &idxIt : gep->indices()) {
+      Value *idx = idxIt;
 
-    // Next Levels, Eventually
-    int64_t nextLvlResult = 0;
-    if (GetElementPtrInst *nextLevelGEPI =
-            dyn_cast<GetElementPtrInst>(currLevelGEPI->getPointerOperand())) {
-      nextLvlResult = iterateElementPtrRecursively(nextLevelGEPI, level + 1,
-                                                   failed, alloca);
-    } else if (isa<AllocaInst>(currLevelGEPI->getPointerOperand())) {
-      alloca = currLevelGEPI->getPointerOperand();
+      // if Constant
+      if (ConstantInt *CI = dyn_cast<ConstantInt>(idx)) {
+        return CI->getSExtValue();
+      }
+
+      // if SExt
+      else if (SExtInst *idxSext = dyn_cast<SExtInst>(idx)) {
+        return extractIndex(idxSext, failed);
+      }
+
+      // if Mul
+      else if (Instruction *idxMul = dyn_cast<Instruction>(idx)) {
+        if (idxMul->getOpcode() == Instruction::Mul) {
+          return computeOperandProduct(idxMul, failed);
+        }
+      }
+
+      break; // we stop to the first found index.
+    }
+    return 0;
+  }
+
+  int64_t computeFullOffsetRecursive(GetElementPtrInst *gep, unsigned level,
+                                     bool &failed, Value *&alloca) const {
+
+    int64_t totalOffset = computeGEPLevelOffset(gep, failed);
+
+    Value *ptr = gep->getPointerOperand();
+    if (auto *nestedGEP = dyn_cast<GetElementPtrInst>(ptr)) {
+      totalOffset +=
+          computeFullOffsetRecursive(nestedGEP, level + 1, failed, alloca);
+    } else if (isa<AllocaInst>(ptr)) {
+      alloca = ptr;
       utils::debug("[LF-NDD] Array Depth: " + std::to_string(level + 1));
     }
 
-    return currLvlResult + nextLvlResult;
+    return totalOffset;
   }
 
   bool isDistanceNegative(StoreInst *store, LoadInst *load) const {
-
-    /*
-     * Abbiamo due alternative per controllare se la distanza e' negativa:
-     * 1. SCALAR EVOLUTION ANALYSIS
-     *  - guarda github.
-     * 2. CONTROLLO DEI GETELEMENTPTR NELL'IR
-     *  - Otteniamo la Store del primo loop e la Load del secondo.
-     *  - Otteniamo la getelementptr della store e della load.
-     *  - Controlliamo che si riferiscano allo stesso array.
-     *  - In un qualche modo cerchiamo di capire se ci sono incongruenze tra gli
-     *    offset utilizzati dalla load e dalla store.
-     *
-     *  - In memoria la matrice è serializzata.
-     *  - Quindi gli elementi si accedono tramite la classica formula:
-     *    element = (r * dim + col)
-     *  - Questo spiega la presenza di due getelementptr durante la load e la
-     *    store.
-     */
-
-    GetElementPtrInst *storeGEPI = dyn_cast<GetElementPtrInst>(
+    GetElementPtrInst *storeGEP = dyn_cast<GetElementPtrInst>(
                           store->getPointerOperand()),
-                      *loadGEPI = dyn_cast<GetElementPtrInst>(
+                      *loadGEP = dyn_cast<GetElementPtrInst>(
                           load->getPointerOperand());
 
-    if (!storeGEPI || !loadGEPI) {
+    if (!storeGEP || !loadGEP) {
       utils::debug("[LF-NDD] -- One of the pointer operands is not a GEP.",
                    utils::YELLOW);
       return false;
     }
 
     bool failed = false;
-
-    Value *storeAlloca, *loadAlloca;
+    Value *storeAlloca = nullptr, *loadAlloca = nullptr;
 
     int64_t storeResult =
-        iterateElementPtrRecursively(storeGEPI, 0, failed, storeAlloca);
+        computeFullOffsetRecursive(storeGEP, 0, failed, storeAlloca);
     int64_t loadResult =
-        iterateElementPtrRecursively(loadGEPI, 0, failed, loadAlloca);
+        computeFullOffsetRecursive(loadGEP, 0, failed, loadAlloca);
 
     if (storeAlloca != loadAlloca) {
       utils::debug(
@@ -756,11 +760,13 @@ private:
 
     // l2phi->replaceAllUsesWith(l1phi);
 
-    if (combinedBodyAndLatch(secondLoop)) {
-      utils::debug("[LF-LF] Second loop has the body and the latch combined.",
-                    utils::BLUE);
-      return combinedBodyAndLatchFusion(firstLoop, secondLoop);
-    }
+    // COMMENTATO
+    // if (combinedBodyAndLatch(secondLoop)) {
+    //   utils::debug("[LF-LF] Second loop has the body and the latch
+    //   combined.",
+    //                utils::BLUE);
+    //   return combinedBodyAndLatchFusion(firstLoop, secondLoop);
+    // }
 
     // if (bodySameAsLatch(firstLoop) && !bodySameAsLatch(secondLoop)) {
     //   singleSameBodyLatchFusion(firstLoop, secondLoop);
