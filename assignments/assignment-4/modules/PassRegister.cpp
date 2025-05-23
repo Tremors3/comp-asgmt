@@ -321,11 +321,13 @@ private:
                             bool &failed) const {
     if (failed)
       return 0;
-    if (visited->count(curr) > 0)
-      return 0;
-    visited->insert(curr);
 
     if (Instruction *currInst = dyn_cast<Instruction>(curr)) {
+
+      if (visited->count(curr) > 0)
+        return 0;
+      visited->insert(curr);
+
       // Handle SExt/ZExt early
       if (SExtInst *sext = dyn_cast<SExtInst>(currInst))
         return resolveIndexValue(sext->getOperand(0), visited, failed);
@@ -341,6 +343,7 @@ private:
       }
 
       if (!currInst->isBinaryOp()) {
+        utils::debug("[LF-NDD] The instruction isn't binary.", utils::YELLOW);
         failed = true;
         return 0;
       }
@@ -362,14 +365,14 @@ private:
       case Instruction::SDiv:
         return op1res / op2res;
       default:
+        utils::debug("[LF-NDD] Unsupported operation type.", utils::YELLOW);
         failed = true;
         return 0;
       }
-    }
-
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(curr))
+    } else if (ConstantInt *CI = dyn_cast<ConstantInt>(curr))
       return CI->getSExtValue();
 
+    utils::debug("[LF-NDD] Unsupported instruction type.", utils::YELLOW);
     failed = true;
     return 0;
   }
@@ -431,29 +434,31 @@ private:
     if (failed)
       return 0;
 
+    int64_t offset = 0;
+
     for (auto &idxIt : gep->indices()) {
       Value *idx = idxIt;
 
       // if Constant
       if (ConstantInt *CI = dyn_cast<ConstantInt>(idx)) {
-        return CI->getSExtValue();
+        offset += CI->getSExtValue();
       }
 
       // if SExt
       else if (SExtInst *idxSext = dyn_cast<SExtInst>(idx)) {
-        return extractIndex(idxSext, failed);
+        offset += extractIndex(idxSext, failed);
       }
 
       // if Mul
       else if (Instruction *idxMul = dyn_cast<Instruction>(idx)) {
         if (idxMul->getOpcode() == Instruction::Mul) {
-          return computeOperandProduct(idxMul, failed);
+          offset += computeOperandProduct(idxMul, failed);
         }
       }
 
-      break; // we stop to the first found index.
+      // break; // we stop to the first found index.
     }
-    return 0;
+    return offset;
   }
 
   int64_t computeFullOffsetRecursive(GetElementPtrInst *gep, unsigned level,
@@ -689,7 +694,95 @@ private:
     return true;
   }
 
-  void singleSameBodyLatchFusion(Loop *L1, Loop *L2) {}
+  bool singleCombinedBodyAndLatchFusion(Loop *L1, Loop *L2) {
+    PHINode *L1Phi = L1->getCanonicalInductionVariable();
+    Instruction *L1incInst = getLoopIncrementInstruction(L1);
+    BasicBlock *L1exit = L1->getExitBlock();
+    BasicBlock *L1Header = L1->getHeader();
+    BranchInst *L1BranchInst = dyn_cast<BranchInst>(L1Header->getTerminator());
+    BasicBlock *L1latch = L1->getLoopLatch();
+
+    PHINode *L2Phi = L2->getCanonicalInductionVariable();
+    Instruction *L2incInst = getLoopIncrementInstruction(L2);
+    BasicBlock *L2exit = L2->getExitBlock();
+    BasicBlock *L2Header = L2->getHeader();
+    BranchInst *L2branchInst = dyn_cast<BranchInst>(L2Header->getTerminator());
+    BasicBlock *L2latch = L2->getLoopLatch();
+
+    if (!L1Phi || !L2Phi) {
+      utils::debug("Induction variables not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L1incInst || !L2incInst) {
+      utils::debug("Increment instruction not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L1exit || !L2exit) {
+      utils::debug("Exit block not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L2Header) {
+      utils::debug("Second loop header not found.", utils::YELLOW);
+      return false;
+    }
+
+    if (!L2branchInst) {
+      utils::debug("Second loop branch instruction not found.", utils::YELLOW);
+      return false;
+    }
+
+    // Trova le istruzioni da spostare
+    SmallVector<Instruction *, 8> instToMove;
+    for (auto I = L2Header->begin(); I != L2Header->end(); I++) {
+      Instruction *II = dyn_cast<Instruction>(I);
+      if (II != L2Phi && II != L2branchInst && II != L2incInst) {
+        instToMove.push_back(II);
+      }
+    }
+
+    // Sposta le istruzioni
+    for (auto I : instToMove) {
+      I->moveBefore(L1incInst);
+      I->replaceUsesOfWith(L2Phi, L1Phi);
+    }
+
+    L2incInst->moveAfter(L2Phi);
+    L1BranchInst->replaceAllUsesWith(L2branchInst);
+
+    L2branchInst->moveBefore(L1BranchInst);
+    L1BranchInst->eraseFromParent();
+
+    SmallVector<BasicBlock *, 8> BBToMove;
+    for (auto S : L2branchInst->successors()) {
+      BBToMove.push_back(S);
+    }
+
+    for (auto BB : BBToMove) {
+
+      for (auto succ : successors(BB)) {
+        if (!std::count(BBToMove.begin(), BBToMove.end(), succ)) {
+          for (auto &inst : *BB) {
+            inst.replaceUsesOfWith(BB->getSingleSuccessor(), L1latch);
+          }
+        }
+      }
+      BB->moveBefore(L1latch);
+    }
+
+    BranchInst::Create(L2latch, L2Header);
+
+    // Cambia l'exit block di L1 con quello di L2
+    for (auto U : predecessors(L1exit)) {
+      for (auto &I : *U) {
+        I.replaceUsesOfWith(L1exit, L2exit);
+      }
+    }
+
+    return true;
+  }
 
   bool combinedBodyAndLatch(Loop *L) {
 
@@ -727,12 +820,17 @@ private:
     // l2phi->replaceAllUsesWith(l1phi);
 
     // COMMENTATO
-    // if (combinedBodyAndLatch(secondLoop)) {
-    //   utils::debug("[LF-LF] Second loop has the body and the latch
-    //   combined.",
-    //                utils::BLUE);
-    //   return combinedBodyAndLatchFusion(firstLoop, secondLoop);
-    // }
+    if (combinedBodyAndLatch(secondLoop)) {
+      utils::debug("[LF-LF] Second loop has the body and the latch combined.",
+                   utils::BLUE);
+      return combinedBodyAndLatchFusion(firstLoop, secondLoop);
+    }
+
+    if (combinedBodyAndLatch(firstLoop)) {
+      utils::debug("[LF-LF] First loop has the body and the latch combined.",
+                   utils::BLUE);
+      return singleCombinedBodyAndLatchFusion(firstLoop, secondLoop);
+    }
 
     // if (bodySameAsLatch(firstLoop) && !bodySameAsLatch(secondLoop)) {
     //   singleSameBodyLatchFusion(firstLoop, secondLoop);
@@ -806,8 +904,12 @@ private:
       bool isCoupleFused =
           isCoupleValid && fuseLoops(Worklist[first], Worklist[second]);
 
-      if (isCoupleFused)
+      if (isCoupleFused) {
         utils::debug("[LF] Couple fused successfully.", utils::PURPLE);
+        outs() << "\n";
+        F.print(outs());
+        outs() << "\n";
+      }
 
       Transformed |= isCoupleFused;
     }
