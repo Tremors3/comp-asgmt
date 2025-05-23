@@ -317,93 +317,59 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
-  // TO REFACTOR
   int64_t resolveIndexValue(Value *curr, std::set<Value *> *visited,
                             bool &failed) const {
-
-    // In case of error, exit immediatly
     if (failed)
       return 0;
-
-    // If the instruction is already visited, exit immediatly
-    if (visited->count(curr) > 0) {
-      utils::debug("Already Visited!");
+    if (visited->count(curr) > 0)
       return 0;
-    }
     visited->insert(curr);
 
-    // Following the "Use-Definition" chain
     if (Instruction *currInst = dyn_cast<Instruction>(curr)) {
+      // Handle SExt/ZExt early
+      if (SExtInst *sext = dyn_cast<SExtInst>(currInst))
+        return resolveIndexValue(sext->getOperand(0), visited, failed);
+      if (ZExtInst *zext = dyn_cast<ZExtInst>(currInst))
+        return resolveIndexValue(zext->getOperand(0), visited, failed);
 
-      // In case of a SExt or ZExt node
-
-      // In case of a phi node
       if (PHINode *phi = dyn_cast<PHINode>(currInst)) {
-
-        // utils::debug("PHINode!");
-
         int64_t sum = 0;
         for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
-          Value *incomingVal = phi->getIncomingValue(i);
-          if (ConstantInt *constant = dyn_cast<ConstantInt>(incomingVal)) {
-            sum += constant->getZExtValue();
-          } else {
-            // sum += countInductIndexRecursively(incomingVal, visited, failed);
-          }
+          sum += resolveIndexValue(phi->getIncomingValue(i), visited, failed);
         }
-
         return sum;
       }
 
-      // If the instruction is not binary, exit immediatly
       if (!currInst->isBinaryOp()) {
-        utils::debug("The instruction isn't binary!");
         failed = true;
         return 0;
       }
 
-      // Getting constant/recursive operators value
       Value *op1 = currInst->getOperand(0);
       Value *op2 = currInst->getOperand(1);
 
-      int64_t op1res;
-      if (ConstantInt *constant = dyn_cast<ConstantInt>(op1)) {
-        op1res = constant->getSExtValue();
-      } else {
-        op1res = resolveIndexValue(op1, visited, failed);
-      }
+      int64_t op1res = resolveIndexValue(op1, visited, failed);
+      int64_t op2res = resolveIndexValue(op2, visited, failed);
 
-      int64_t op2res;
-      if (ConstantInt *constant = dyn_cast<ConstantInt>(op2)) {
-        op2res = constant->getSExtValue();
-      } else {
-        op2res = resolveIndexValue(op2, visited, failed);
-      }
-
-      // Deciding the operation type
       switch (currInst->getOpcode()) {
       case Instruction::Add:
         return op1res + op2res;
-        break;
       case Instruction::Sub:
         return op1res - op2res;
-        break;
       case Instruction::Mul:
         return op1res * op2res;
-        break;
       case Instruction::UDiv:
       case Instruction::SDiv:
         return op1res / op2res;
-        break;
       default:
-        utils::debug("The curr instr isn't of type add/sub/mul/div.");
         failed = true;
         return 0;
-        break;
       }
     }
 
-    utils::debug("Value is not an instruction!");
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(curr))
+      return CI->getSExtValue();
+
     failed = true;
     return 0;
   }
