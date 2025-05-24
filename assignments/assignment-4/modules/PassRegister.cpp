@@ -16,6 +16,7 @@
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/Analysis/PostDominators.h>
 #include <llvm/Analysis/ScalarEvolution.h>
+#include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Constant.h>
@@ -614,6 +615,30 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
+  struct {
+    Loop *loop;
+    PHINode *phi;
+    Instruction *incInst;
+    BasicBlock *exit;
+    BasicBlock *header;
+    BranchInst *headerBranch;
+    BasicBlock *latch;
+    BranchInst *guardBranch;
+    BasicBlock *preheader;
+  } typedef LFCandidate;
+
+  void constructCandidate(Loop *loop, LFCandidate *LFC) {
+    LFC->loop = loop;
+    LFC->phi = loop->getCanonicalInductionVariable();
+    LFC->incInst = getLoopIncrementInstruction(loop);
+    LFC->exit = loop->getExitBlock();
+    LFC->header = loop->getHeader();
+    LFC->headerBranch = dyn_cast<BranchInst>(LFC->header->getTerminator());
+    LFC->latch = loop->getLoopLatch();
+    LFC->guardBranch = loop->getLoopGuardBranch();
+    LFC->preheader = loop->getLoopPreheader();
+  }
+
   Instruction *getLoopIncrementInstruction(Loop *L) {
     PHINode *phi = L->getCanonicalInductionVariable();
     for (auto &U : phi->incoming_values()) {
@@ -623,232 +648,35 @@ private:
         }
       }
     }
-
     return nullptr;
   }
 
-  bool combinedBodyAndLatchFusion(Loop *L1, Loop *L2) {
-
-    PHINode *L1Phi = L1->getCanonicalInductionVariable();
-    Instruction *L1incInst = getLoopIncrementInstruction(L1);
-    BasicBlock *L1exit = L1->getExitBlock();
-
-    PHINode *L2Phi = L2->getCanonicalInductionVariable();
-    Instruction *L2incInst = getLoopIncrementInstruction(L2);
-    BasicBlock *L2exit = L2->getExitBlock();
-    BasicBlock *L2Header = L2->getHeader();
-    BranchInst *L2brancInst = dyn_cast<BranchInst>(L2Header->getTerminator());
-
-    if (!L1Phi || !L2Phi) {
-      utils::debug("Induction variables not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L1incInst || !L2incInst) {
-      utils::debug("Increment instruction not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L1exit || !L2exit) {
-      utils::debug("Exit block not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L2Header) {
-      utils::debug("Second loop header not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L2brancInst) {
-      utils::debug("Second loop branch instruction not found.", utils::YELLOW);
-      return false;
-    }
-
-    // Trova le istruzioni da spostare
-    SmallVector<Instruction *, 8> toMove;
-    for (auto I = L2Header->begin(); I != L2Header->end(); I++) {
-      Instruction *II = dyn_cast<Instruction>(I);
-      if (II != L2Phi && II != L2brancInst && II != L2incInst) {
-        toMove.push_back(II);
-      }
-    }
-
-    // Sposta le istruzioni
-    for (auto I : toMove) {
-      I->moveBefore(L1incInst);
-      I->replaceUsesOfWith(L2Phi, L1Phi);
-    }
-
-    // Cambia l'exit block di L1 con quello di L2
-    for (auto U : predecessors(L1exit)) {
-      for (auto &I : *U) {
-        I.replaceUsesOfWith(L1exit, L2exit);
-      }
-    }
-
-    // Volendo si possono anche cancellare i pezzi che non servono più
-    // L1exit->eraseFromParent();
-    // L2Header->eraseFromParent();
-    // L2->getLoopLatch()->eraseFromParent();
-
-    return true;
-  }
-
-  bool singleCombinedBodyAndLatchFusion(Loop *L1, Loop *L2) {
-    PHINode *L1Phi = L1->getCanonicalInductionVariable();
-    Instruction *L1incInst = getLoopIncrementInstruction(L1);
-    BasicBlock *L1exit = L1->getExitBlock();
-    BasicBlock *L1Header = L1->getHeader();
-    BranchInst *L1BranchInst = dyn_cast<BranchInst>(L1Header->getTerminator());
-    BasicBlock *L1latch = L1->getLoopLatch();
-
-    PHINode *L2Phi = L2->getCanonicalInductionVariable();
-    Instruction *L2incInst = getLoopIncrementInstruction(L2);
-    BasicBlock *L2exit = L2->getExitBlock();
-    BasicBlock *L2Header = L2->getHeader();
-    BranchInst *L2branchInst = dyn_cast<BranchInst>(L2Header->getTerminator());
-    BasicBlock *L2latch = L2->getLoopLatch();
-
-    if (!L1Phi || !L2Phi) {
-      utils::debug("Induction variables not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L1incInst || !L2incInst) {
-      utils::debug("Increment instruction not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L1exit || !L2exit) {
-      utils::debug("Exit block not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L2Header) {
-      utils::debug("Second loop header not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L2branchInst) {
-      utils::debug("Second loop branch instruction not found.", utils::YELLOW);
-      return false;
-    }
-
-    // Trova le istruzioni da spostare
-    SmallVector<Instruction *, 8> instToMove;
-    for (auto I = L2Header->begin(); I != L2Header->end(); I++) {
-      Instruction *II = dyn_cast<Instruction>(I);
-      if (II != L2Phi && II != L2branchInst && II != L2incInst) {
-        instToMove.push_back(II);
-      }
-    }
-
-    // Sposta le istruzioni
-    for (auto I : instToMove) {
-      I->moveBefore(L1incInst);
-      I->replaceUsesOfWith(L2Phi, L1Phi);
-    }
-
+  void moveBranch(Instruction *L2incInst, PHINode *L2Phi,
+                  BranchInst *L1BranchInst, BranchInst *L2branchInst) {
     L2incInst->moveAfter(L2Phi);
     L1BranchInst->replaceAllUsesWith(L2branchInst);
 
     L2branchInst->moveBefore(L1BranchInst);
     L1BranchInst->eraseFromParent();
-
-    SmallVector<BasicBlock *, 8> BBToMove;
-    for (auto S : L2branchInst->successors()) {
-      BBToMove.push_back(S);
-    }
-
-    for (auto BB : BBToMove) {
-
-      for (auto succ : successors(BB)) {
-        if (!std::count(BBToMove.begin(), BBToMove.end(), succ)) {
-          for (auto &inst : *BB) {
-            inst.replaceUsesOfWith(BB->getSingleSuccessor(), L1latch);
-          }
-        }
-      }
-      BB->moveBefore(L1latch);
-    }
-
-    BranchInst::Create(L2latch, L2Header);
-
-    // Cambia l'exit block di L1 con quello di L2
-    for (auto U : predecessors(L1exit)) {
-      for (auto &I : *U) {
-        I.replaceUsesOfWith(L1exit, L2exit);
-      }
-    }
-
-    return true;
   }
 
-  bool differentBodyAndLatchFusion(Loop *L1, Loop *L2) {
-    PHINode *L1Phi = L1->getCanonicalInductionVariable();
-    Instruction *L1incInst = getLoopIncrementInstruction(L1);
-    BasicBlock *L1exit = L1->getExitBlock();
-    BasicBlock *L1Header = L1->getHeader();
-    BranchInst *L1BranchInst = dyn_cast<BranchInst>(L1Header->getTerminator());
-    BasicBlock *L1latch = L1->getLoopLatch();
+  void secondDifferentBodyAndLatch(LFCandidate &lfc1, LFCandidate &lfc2,
+                                   bool bothDifferent) {
 
-    PHINode *L2Phi = L2->getCanonicalInductionVariable();
-    Instruction *L2incInst = getLoopIncrementInstruction(L2);
-    BasicBlock *L2exit = L2->getExitBlock();
-    BasicBlock *L2Header = L2->getHeader();
-    BranchInst *L2branchInst = dyn_cast<BranchInst>(L2Header->getTerminator());
-    BasicBlock *L2latch = L2->getLoopLatch();
+    if (bothDifferent) {
 
-    if (!L1Phi || !L2Phi) {
-      utils::debug("Induction variables not found.", utils::YELLOW);
-      return false;
+      BasicBlock *L1IncInstBB = lfc1.incInst->getParent();
+      BranchInst *L1IncInstBBBranchInst =
+          dyn_cast<BranchInst>(L1IncInstBB->getTerminator());
+
+      moveBranch(lfc2.incInst, lfc2.phi, L1IncInstBBBranchInst,
+                 lfc2.headerBranch);
+    } else {
+      moveBranch(lfc2.incInst, lfc2.phi, lfc1.headerBranch, lfc2.headerBranch);
     }
-
-    if (!L1incInst || !L2incInst) {
-      utils::debug("Increment instruction not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L1exit || !L2exit) {
-      utils::debug("Exit block not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L2Header) {
-      utils::debug("Second loop header not found.", utils::YELLOW);
-      return false;
-    }
-
-    if (!L2branchInst) {
-      utils::debug("Second loop branch instruction not found.", utils::YELLOW);
-      return false;
-    }
-
-    SmallVector<Instruction *, 8> instToMove;
-    for (auto I = L2Header->begin(); I != L2Header->end(); I++) {
-      Instruction *II = dyn_cast<Instruction>(I);
-      if (II != L2Phi && II != L2branchInst && II != L2incInst) {
-        instToMove.push_back(II);
-      }
-    }
-
-    // Sposta le istruzioni
-    for (auto I : instToMove) {
-      I->moveBefore(L1incInst);
-      I->replaceUsesOfWith(L2Phi, L1Phi);
-    }
-
-    BasicBlock *L1IncInstBB = L1incInst->getParent();
-    BranchInst *L1IncInstBBBranchInst = dyn_cast<BranchInst>(L1IncInstBB->getTerminator());
-
-    L2incInst->moveAfter(L2Phi);
-    L1IncInstBBBranchInst->replaceAllUsesWith(L2branchInst);
-
-    L2branchInst->moveBefore(L1IncInstBBBranchInst);
-    L1IncInstBBBranchInst->eraseFromParent();
 
     SmallVector<BasicBlock *, 8> BBToMove;
-    for (auto S : L2branchInst->successors()) {
+    for (auto S : lfc2.headerBranch->successors()) {
       BBToMove.push_back(S);
     }
 
@@ -857,22 +685,62 @@ private:
       for (auto succ : successors(BB)) {
         if (!std::count(BBToMove.begin(), BBToMove.end(), succ)) {
           for (auto &inst : *BB) {
-            inst.replaceUsesOfWith(BB->getSingleSuccessor(), L1latch);
+            inst.replaceUsesOfWith(BB->getSingleSuccessor(), lfc1.latch);
           }
         }
       }
-      BB->moveBefore(L1latch);
+      BB->moveBefore(lfc1.latch);
     }
 
-    BranchInst::Create(L2latch, L2Header);
+    BranchInst::Create(lfc2.latch, lfc2.header);
+  }
 
-    // Cambia l'exit block di L1 con quello di L2
-    for (auto U : predecessors(L1exit)) {
+  bool combinedBodyAndLatchFusion(LFCandidate &lfc1, LFCandidate &lfc2,
+                                  bool secondDBL, bool bothDifferent) {
 
-      for (auto &I : *U) {
-        I.replaceUsesOfWith(L1exit, L2exit);
+    // Find the instructions that need to be moved
+    SmallVector<Instruction *, 8> toMove;
+    for (auto I = lfc2.header->begin(); I != lfc2.header->end(); I++) {
+      Instruction *II = dyn_cast<Instruction>(I);
+      if (II != lfc2.phi && II != lfc2.headerBranch && II != lfc2.incInst) {
+        toMove.push_back(II);
       }
     }
+
+    // Move the instructions
+    for (auto I : toMove) {
+      I->moveBefore(lfc1.incInst);
+      I->replaceUsesOfWith(lfc2.phi, lfc1.phi);
+    }
+
+    if (secondDBL)
+      secondDifferentBodyAndLatch(lfc1, lfc2, bothDifferent);
+
+    // Swap the exit of L1 with the exit of L2
+    for (auto U : predecessors(lfc1.exit)) {
+      for (auto &I : *U) {
+        I.replaceUsesOfWith(lfc1.exit, lfc2.exit);
+      }
+    }
+
+    // RECONSTRUCT THE CFG
+    // DT.recalculate(F);
+    // PDT.recalculate(F);
+
+    if (lfc1.guardBranch) {
+      for (auto succ : successors(lfc1.guardBranch)) {
+        if (succ != lfc1.preheader) {
+          lfc1.guardBranch->replaceUsesOfWith(succ, lfc2.exit);
+        }
+      }
+    }
+
+    // If necessary, remove the basic blocks that will never be executed
+    // if (L2GuardBranch)
+    //   L2Guard->eraseFromParent();
+    // L1exit->eraseFromParent();
+    // L2Header->eraseFromParent();
+    // L2->getLoopLatch()->eraseFromParent();
 
     return true;
   }
@@ -888,23 +756,29 @@ private:
   }
 
   bool fuseLoops(Loop *firstLoop, Loop *secondLoop) {
+
+    LFCandidate lfc1, lfc2;
+    constructCandidate(firstLoop, &lfc1);
+    constructCandidate(secondLoop, &lfc2);
+
     if (combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Second loop has the body and the latch combined.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(firstLoop, secondLoop);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, false, false);
     }
 
     if (combinedBodyAndLatch(firstLoop)) {
       utils::debug("[LF-LF] First loop has the body and the latch combined.",
                    utils::BLUE);
-      return singleCombinedBodyAndLatchFusion(firstLoop, secondLoop);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, true, false);
     }
 
     if (!combinedBodyAndLatch(firstLoop) && !combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Both loops have the body and the latch different.",
                    utils::BLUE);
-      return differentBodyAndLatchFusion(firstLoop, secondLoop);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, true, true);
     }
+
     return false;
   }
 
@@ -952,9 +826,9 @@ private:
 
       if (isCoupleFused) {
         utils::debug("[LF] Couple fused successfully.", utils::PURPLE);
-        // outs() << "\n";
-        // F.print(outs());
-        // outs() << "\n";
+        outs() << '\n';
+        F.print(outs());
+        outs() << '\n';
       }
 
       Transformed |= isCoupleFused;
