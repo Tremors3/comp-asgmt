@@ -11,6 +11,7 @@
 // License: GPL3
 //============================================================================//
 #include <llvm/ADT/DepthFirstIterator.h>
+#include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/DependenceAnalysis.h>
 #include <llvm/Analysis/LoopInfo.h>
@@ -695,6 +696,14 @@ private:
     BranchInst::Create(lfc2.latch, lfc2.header);
   }
 
+  void orderPHIs(BasicBlock *BB) {
+    for (auto &inst: *BB){
+      if(isa<PHINode>(inst)) {
+        inst.moveBefore(BB->getFirstNonPHI());
+      }
+    }
+  }
+
   bool combinedBodyAndLatchFusion(LFCandidate &lfc1, LFCandidate &lfc2,
                                   bool secondDBL, bool bothDifferent) {
 
@@ -707,10 +716,14 @@ private:
       }
     }
 
+    SmallVector<PHINode *, 8> phiToUpdate;
     // Move the instructions
     for (auto I : toMove) {
       I->moveBefore(lfc1.incInst);
       I->replaceUsesOfWith(lfc2.phi, lfc1.phi);
+      if(isa<PHINode>(I)) {
+        phiToUpdate.push_back(I);
+      }
     }
 
     if (secondDBL)
@@ -734,6 +747,8 @@ private:
         }
       }
     }
+
+    orderPHIs(lfc1.header);
 
     // If necessary, remove the basic blocks that will never be executed
     // if (L2GuardBranch)
