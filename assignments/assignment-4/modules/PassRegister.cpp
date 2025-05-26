@@ -52,7 +52,7 @@ private:
   /* ------------------------------------------------------------------------ */
 
   /**
-   * Returns the guard of the loop if it exists
+   * Returns the guard of the loop if it exists.
    */
   BasicBlock *getLoopGuard(Loop *L) const {
     if (BranchInst *br = L->getLoopGuardBranch())
@@ -61,7 +61,7 @@ private:
   }
 
   /**
-   * Checks for unwanted instructions inside the preheader
+   * Checks for unwanted instructions inside the preheader.
    */
   bool cleanFromUnwantedInstructions(BasicBlock *BB,
                                      std::set<Instruction *> whitelist) const {
@@ -72,7 +72,7 @@ private:
   }
 
   /**
-   * Check if the first guard points to the second guard
+   * Check if the first guard points to the second guard.
    */
   bool firstGuardPointsSecondGuard(BasicBlock *firGuard,
                                    BasicBlock *secGuard) const {
@@ -86,7 +86,7 @@ private:
   }
 
   /**
-   * Get the guard branch condition
+   * Get the guard branch condition.
    */
   Value *getGuardBranchCondition(BasicBlock *BB) const {
     if (auto *branchInst = dyn_cast<BranchInst>(BB->getTerminator()))
@@ -97,7 +97,7 @@ private:
 
   /**
    * Check if both guard condition are equal by comparing every component
-   * of the condition
+   * of the condition.
    */
   bool areGuardsEquivalent(BasicBlock *firGuard, BasicBlock *secGuard) const {
     if (auto *firCond = dyn_cast<ICmpInst>(getGuardBranchCondition(firGuard))) {
@@ -117,6 +117,10 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
+  /**
+   * Checks if the first loop is adjacent to the second one and if they are
+   * clean so that they don't contain unwanted instructions.
+   */
   bool checkGuardedLoopsAdjacency(Loop *firstLoop, Loop *secondLoop,
                                   BasicBlock *firstGuard,
                                   BasicBlock *secondGuard) const {
@@ -183,8 +187,8 @@ private:
   }
 
   /**
-   * Check if the first loop is adjacent to the second one and if they are clean
-   * so that they don't contain unwanted instructions.
+   * Checks if the first loop is adjacent to the second one and if they are
+   * clean so that they don't contain unwanted instructions.
    */
   bool checkUnguardedLoopsAdjacency(Loop *firstLoop, Loop *secondLoop) const {
 
@@ -228,7 +232,9 @@ private:
   }
 
   /**
-   * Runs adjacency analysis
+   * Runs adjacency analysis, checking first if both loops are guarded or
+   * unguarded. In case only one of them is guarded, no adjacency check is
+   * performed.
    */
   bool adjacentAnalysis(Loop *firstLoop, Loop *secondLoop) const {
 
@@ -280,9 +286,14 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
+  /**
+   * Checks if the two loops iterate the same number of times.
+   * @see <a
+   * href="https://llvm.org/devmtg/2018-04/slides/Absar-ScalarEvolution.pdf">
+   * Scalar Evolution </a>
+   */
   bool areTripCountEquivalent(Loop *firstLoop, Loop *secondLoop,
                               ScalarEvolution *SE) const {
-    // https://llvm.org/devmtg/2018-04/slides/Absar-ScalarEvolution.pdf
 
     if (!SE->hasLoopInvariantBackedgeTakenCount(firstLoop) ||
         !SE->hasLoopInvariantBackedgeTakenCount(secondLoop)) {
@@ -292,7 +303,6 @@ private:
       return false;
     }
 
-    // https://llvm.org/docs/LoopTerminology.html
     const SCEV *l1scev = SE->getBackedgeTakenCount(firstLoop),
                *l2scev = SE->getBackedgeTakenCount(secondLoop);
 
@@ -319,6 +329,9 @@ private:
 
   /* ------------------------------------------------------------------------ */
 
+  /**
+   * Recursively resolves an integer value from a given value.
+   */
   int64_t resolveIndexValue(Value *curr, std::set<Value *> *visited,
                             bool &failed) const {
     if (failed)
@@ -365,6 +378,11 @@ private:
         return op1res * op2res;
       case Instruction::UDiv:
       case Instruction::SDiv:
+        if (op2res == 0) {
+          utils::debug("[LF-NDD] Division by zero.", utils::YELLOW);
+          failed = true;
+          return 0;
+        }
         return op1res / op2res;
       default:
         utils::debug("[LF-NDD] Unsupported operation type.", utils::YELLOW);
@@ -379,6 +397,10 @@ private:
     return 0;
   }
 
+  /**
+   * Extracts and sums the values of the operands of the given SExt/ZExt
+   * instruction.
+   */
   int64_t extractIndex(Instruction *inst, bool &failed) const {
     if (failed)
       return 0;
@@ -393,6 +415,10 @@ private:
 
   // i.e: ... (c * D2 * D3 * D4) + (i * D2 * D3) + (j * D3) + k
 
+  /**
+   * Recursively computes the product of operands of a given Mul instruction,
+   * extracting values from constants and SExt/ZExt instructions.
+   */
   int64_t computeOperandProduct(Instruction *current, bool &failed) const {
     if (failed)
       return 0;
@@ -432,6 +458,10 @@ private:
     return value;
   }
 
+  /**
+   * Computes the offset contribution of a single GEP instruction by analyzing
+   * its indices.
+   */
   int64_t computeGEPLevelOffset(GetElementPtrInst *gep, bool &failed) const {
     if (failed)
       return 0;
@@ -463,6 +493,10 @@ private:
     return offset;
   }
 
+  /**
+   * Recursively computes the total offset from a nested GEP chain, identifying
+   * the base alloca instruction and the array depth.
+   */
   int64_t computeFullOffsetRecursive(GetElementPtrInst *gep, unsigned level,
                                      bool &failed, Value *&alloca) const {
 
@@ -480,6 +514,10 @@ private:
     return totalOffset;
   }
 
+  /**
+   * Calculates the dependency distance between store and load instructions and
+   * checks if it is negative.
+   */
   bool isDistanceNegative(StoreInst *store, LoadInst *load) const {
     GetElementPtrInst *storeGEP = dyn_cast<GetElementPtrInst>(
                           store->getPointerOperand()),
@@ -495,6 +533,7 @@ private:
     bool failed = false;
     Value *storeAlloca = nullptr, *loadAlloca = nullptr;
 
+    // Calculating the offset on which the load/store instruction is performed
     int64_t storeResult =
         computeFullOffsetRecursive(storeGEP, 0, failed, storeAlloca);
     int64_t loadResult =
@@ -525,6 +564,10 @@ private:
     return false;
   }
 
+  /**
+   * Iterates through the instructions in the loop, saving only the load/store
+   * instructions.
+   */
   void getLoopInstructionByType(Loop *L, std::vector<StoreInst *> *stores,
                                 std::vector<LoadInst *> *loads) const {
     for (BasicBlock *BB : L->getBlocks()) {
@@ -539,6 +582,10 @@ private:
     }
   }
 
+  /**
+   * Checks if the load and store instructions of the two loops are dependent.
+   * If they are, then checks if their dependency distance is negative.
+   */
   bool areNegativeDistanceDependent(Loop *firstLoop, Loop *secondLoop,
                                     DependenceInfo *DI) const {
 
@@ -550,11 +597,15 @@ private:
     getLoopInstructionByType(secondLoop, &SecondLoopStoreInst,
                              &SecondLoopLoadInst);
 
+    // Checking the dependency between the store instruction of the first loop
+    // and the load instruction of the second loop
     for (StoreInst *Store : FirstLoopStoreInst)
       for (LoadInst *Load : SecondLoopLoadInst)
         if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
           return true;
 
+    // Checking the dependency between the load instruction of the first loop
+    // and the store instruction of the second loop
     for (LoadInst *Load : FirstLoopLoadInst)
       for (StoreInst *Store : SecondLoopStoreInst)
         if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
@@ -566,7 +617,9 @@ private:
   /* ------------------------------------------------------------------------ */
 
   /**
-   * Analyze two loops
+   * Analyzes two loops and check if they are adjacent, control flow equivalent,
+   * trip count equivalent and if there are any negative distance dependencies
+   * between them. Both loops must be in simplify and rotated form.
    */
   bool analyzeCouple(Loop *FL, Loop *SL, DominatorTree *DT,
                      PostDominatorTree *PDT, ScalarEvolution *SE,
@@ -618,7 +671,7 @@ private:
 
   struct {
     Loop *loop;
-    PHINode *phi;
+    PHINode *indPhi;
     Instruction *incInst;
     BasicBlock *exit;
     BasicBlock *header;
@@ -630,7 +683,7 @@ private:
 
   void constructCandidate(Loop *loop, LFCandidate *LFC) {
     LFC->loop = loop;
-    LFC->phi = loop->getCanonicalInductionVariable();
+    LFC->indPhi = loop->getCanonicalInductionVariable();
     LFC->incInst = getLoopIncrementInstruction(loop);
     LFC->exit = loop->getExitBlock();
     LFC->header = loop->getHeader();
@@ -640,15 +693,16 @@ private:
     LFC->preheader = loop->getLoopPreheader();
   }
 
-  Instruction *getLoopIncrementInstruction(Loop *L) {
-    PHINode *phi = L->getCanonicalInductionVariable();
-    for (auto &U : phi->incoming_values()) {
-      if (Instruction *phiUser = dyn_cast<Instruction>(U)) {
-        if (L->contains(phiUser)) {
-          return phiUser;
-        }
-      }
-    }
+  /**
+   * Returns the instruction that increments the induction variable inside the
+   * loop. If not found, it returns nullptr.
+   */
+  Instruction *getLoopIncrementInstruction(const Loop *L) const {
+    if (PHINode *phi = L->getCanonicalInductionVariable())
+      for (auto &U : phi->incoming_values())
+        if (Instruction *phiUser = dyn_cast<Instruction>(U))
+          if (L->contains(phiUser))
+            return phiUser;
     return nullptr;
   }
 
@@ -661,73 +715,101 @@ private:
     L1BranchInst->eraseFromParent();
   }
 
-  void secondDifferentBodyAndLatch(LFCandidate &lfc1, LFCandidate &lfc2,
-                                   bool bothDifferent) {
+  /**
+   * Move all the phis at the top of the basic block.
+   */
+  void orderPHIs(BasicBlock *BB) {
+    for (auto &inst : *BB)
+      if (isa<PHINode>(inst))
+        inst.moveBefore(BB->getFirstNonPHI());
+  }
 
-    if (bothDifferent) {
-
-      BasicBlock *L1IncInstBB = lfc1.incInst->getParent();
-      BranchInst *L1IncInstBBBranchInst =
-          dyn_cast<BranchInst>(L1IncInstBB->getTerminator());
-
-      moveBranch(lfc2.incInst, lfc2.phi, L1IncInstBBBranchInst,
-                 lfc2.headerBranch);
-    } else {
-      moveBranch(lfc2.incInst, lfc2.phi, lfc1.headerBranch, lfc2.headerBranch);
-    }
-
-    SmallVector<BasicBlock *, 8> BBToMove;
-    for (auto S : lfc2.headerBranch->successors()) {
-      BBToMove.push_back(S);
-    }
-
-    for (auto BB : BBToMove) {
-
-      for (auto succ : successors(BB)) {
-        if (!std::count(BBToMove.begin(), BBToMove.end(), succ)) {
-          for (auto &inst : *BB) {
-            inst.replaceUsesOfWith(BB->getSingleSuccessor(), lfc1.latch);
+  /**
+   * Updates the phi instruction incoming blocks reguarding the values.
+   */
+  void updatePHIs(SmallVector<PHINode *, 8> *phiToUpdate, LFCandidate &lfc1) {
+    for (PHINode *phi : *phiToUpdate) {
+      // For phi instructions inside the header
+      if (lfc1.header == phi->getParent()) {
+        for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
+          Value *incVal = phi->getIncomingValue(i);
+          if (Instruction *inc = dyn_cast<Instruction>(incVal)) {
+            phi->setIncomingBlock(i, lfc1.latch);
+          } else if (isa<Constant>(incVal)) {
+            phi->setIncomingBlock(i, lfc1.header->getPrevNode());
           }
         }
       }
-      BB->moveBefore(lfc1.latch);
     }
-
-    BranchInst::Create(lfc2.latch, lfc2.header);
-  }
-
-  void orderPHIs(BasicBlock *BB) {
-    for (auto &inst: *BB){
-      if(isa<PHINode>(inst)) {
-        inst.moveBefore(BB->getFirstNonPHI());
-      }
-    }
+    phiToUpdate->clear();
   }
 
   bool combinedBodyAndLatchFusion(LFCandidate &lfc1, LFCandidate &lfc2,
-                                  bool secondDBL, bool bothDifferent) {
+                                  bool secondDBL, bool bothDifferent,
+                                  LoopInfo &LI) {
 
-    // Find the instructions that need to be moved
-    SmallVector<Instruction *, 8> toMove;
-    for (auto I = lfc2.header->begin(); I != lfc2.header->end(); I++) {
-      Instruction *II = dyn_cast<Instruction>(I);
-      if (II != lfc2.phi && II != lfc2.headerBranch && II != lfc2.incInst) {
-        toMove.push_back(II);
-      }
-    }
-
+    SmallVector<Instruction *, 8> instToMove;
     SmallVector<PHINode *, 8> phiToUpdate;
-    // Move the instructions
-    for (auto I : toMove) {
+
+    // Find the instructions from the second loop header
+    // that need to be moved to the first loop header.
+    for (Instruction &I : *lfc2.header)
+      if (&I != lfc2.indPhi && &I != lfc2.headerBranch && &I != lfc2.incInst)
+        instToMove.push_back(&I);
+
+    // Move the instructions from the second loop header
+    // to the first loop header, and collect phis that
+    // need to be updated.
+    for (auto I : instToMove) {
       I->moveBefore(lfc1.incInst);
-      I->replaceUsesOfWith(lfc2.phi, lfc1.phi);
-      if(isa<PHINode>(I)) {
-        phiToUpdate.push_back(I);
-      }
+      I->replaceUsesOfWith(lfc2.indPhi, lfc1.indPhi);
+      if (PHINode *phi = dyn_cast<PHINode>(I))
+        phiToUpdate.push_back(phi);
     }
 
-    if (secondDBL)
-      secondDifferentBodyAndLatch(lfc1, lfc2, bothDifferent);
+    // After moving phi instruction from the second loop header to the first
+    // one we need to update the incoming blocks of the phi instructions.
+    updatePHIs(&phiToUpdate, lfc1);
+
+    if (secondDBL) {
+      if (bothDifferent) {
+
+        BasicBlock *L1IncInstBB = lfc1.incInst->getParent();
+        BranchInst *L1IncInstBBBranchInst =
+            dyn_cast<BranchInst>(L1IncInstBB->getTerminator());
+
+        moveBranch(lfc2.incInst, lfc2.indPhi, L1IncInstBBBranchInst,
+                   lfc2.headerBranch);
+      } else {
+        moveBranch(lfc2.incInst, lfc2.indPhi, lfc1.headerBranch,
+                   lfc2.headerBranch);
+      }
+
+      SmallVector<BasicBlock *, 8> BBToMove;
+      for (auto S : lfc2.headerBranch->successors()) {
+        BBToMove.push_back(S);
+      }
+
+      for (auto BB : BBToMove) {
+        for (auto succ : successors(BB)) {
+          if (!std::count(BBToMove.begin(), BBToMove.end(), succ)) {
+            for (auto &inst : *BB) {
+              inst.replaceUsesOfWith(BB->getSingleSuccessor(), lfc1.latch);
+              if (isa<PHINode>(inst)) {
+                phiToUpdate.push_back(dyn_cast<PHINode>(&inst));
+              }
+            }
+          }
+        }
+        lfc1.loop->addBasicBlockToLoop(BB, LI);
+        BB->moveBefore(lfc1.latch);
+      }
+
+      BranchInst::Create(lfc2.latch, lfc2.header);
+    }
+
+    // Updating Phi Instructions Incoming Blocks
+    updatePHIs(&phiToUpdate, lfc1);
 
     // Swap the exit of L1 with the exit of L2
     for (auto U : predecessors(lfc1.exit)) {
@@ -735,10 +817,6 @@ private:
         I.replaceUsesOfWith(lfc1.exit, lfc2.exit);
       }
     }
-
-    // RECONSTRUCT THE CFG
-    // DT.recalculate(F);
-    // PDT.recalculate(F);
 
     if (lfc1.guardBranch) {
       for (auto succ : successors(lfc1.guardBranch)) {
@@ -749,13 +827,6 @@ private:
     }
 
     orderPHIs(lfc1.header);
-
-    // If necessary, remove the basic blocks that will never be executed
-    // if (L2GuardBranch)
-    //   L2Guard->eraseFromParent();
-    // L1exit->eraseFromParent();
-    // L2Header->eraseFromParent();
-    // L2->getLoopLatch()->eraseFromParent();
 
     return true;
   }
@@ -770,28 +841,29 @@ private:
     return (last == body && body == latch);
   }
 
-  bool fuseLoops(Loop *firstLoop, Loop *secondLoop) {
+  bool fuseLoops(Loop *firstLoop, Loop *secondLoop, LoopInfo &LI) {
 
     LFCandidate lfc1, lfc2;
     constructCandidate(firstLoop, &lfc1);
     constructCandidate(secondLoop, &lfc2);
 
+    // Works if fist loop has combined body and latch
     if (combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Second loop has the body and the latch combined.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, false, false);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, false, false, LI);
     }
 
     if (combinedBodyAndLatch(firstLoop)) {
       utils::debug("[LF-LF] First loop has the body and the latch combined.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, true, false);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, true, false, LI);
     }
 
     if (!combinedBodyAndLatch(firstLoop) && !combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Both loops have the body and the latch different.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, true, true);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, true, true, LI);
     }
 
     return false;
@@ -837,7 +909,7 @@ private:
         utils::debug("[LF] Couple is valid.", utils::PURPLE);
 
       bool isCoupleFused =
-          isCoupleValid && fuseLoops(Worklist[first], Worklist[second]);
+          isCoupleValid && fuseLoops(Worklist[first], Worklist[second], LI);
 
       if (isCoupleFused) {
         utils::debug("[LF] Couple fused successfully.", utils::PURPLE);

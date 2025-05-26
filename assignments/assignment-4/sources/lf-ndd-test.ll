@@ -455,9 +455,9 @@ define dso_local void @matrix_ndd_test_multiple_matrices() #0 {
 64:                                               ; preds = %62
   br label %65
 
-65:                                               ; preds = %95, %64
-  %.02 = phi i32 [ 0, %64 ], [ %93, %95 ]
-  %.01 = phi i32 [ 0, %64 ], [ %94, %95 ]
+65:                                               ; preds = %96, %64
+  %.02 = phi i32 [ 0, %64 ], [ %94, %96 ]
+  %.01 = phi i32 [ 0, %64 ], [ %95, %96 ]
   %66 = sext i32 %.02 to i64
   %67 = mul nuw i64 %3, %4
   %68 = mul nuw i64 %67, %5
@@ -467,35 +467,36 @@ define dso_local void @matrix_ndd_test_multiple_matrices() #0 {
   %72 = mul nuw i64 %4, %5
   %73 = mul nsw i64 %71, %72
   %74 = getelementptr inbounds i32, ptr %70, i64 %73
-  %75 = sext i32 %.02 to i64
-  %76 = mul nsw i64 %75, %5
-  %77 = getelementptr inbounds i32, ptr %74, i64 %76
-  %78 = sext i32 %.02 to i64
-  %79 = getelementptr inbounds i32, ptr %77, i64 %78
-  %80 = load i32, ptr %79, align 4
-  %81 = sext i32 %.01 to i64
-  %82 = mul nsw i64 %81, %16
-  %83 = getelementptr inbounds i32, ptr %18, i64 %82
-  %84 = sext i32 %.02 to i64
-  %85 = getelementptr inbounds i32, ptr %83, i64 %84
-  %86 = load i32, ptr %85, align 4
-  %87 = mul nsw i32 %.02, 2
-  %88 = sext i32 %61 to i64
-  %89 = mul nsw i64 %88, %20
-  %90 = getelementptr inbounds i32, ptr %22, i64 %89
-  %91 = sext i32 %61 to i64
-  %92 = getelementptr inbounds i32, ptr %90, i64 %91
-  store i32 %87, ptr %92, align 4
-  %93 = add nsw i32 %.02, 1
-  %94 = add nsw i32 %.01, 2
-  br label %95
+  %75 = add nsw i32 %.02, 1
+  %76 = sext i32 %75 to i64
+  %77 = mul nsw i64 %76, %5
+  %78 = getelementptr inbounds i32, ptr %74, i64 %77
+  %79 = sext i32 %.02 to i64
+  %80 = getelementptr inbounds i32, ptr %78, i64 %79
+  %81 = load i32, ptr %80, align 4
+  %82 = sext i32 %.01 to i64
+  %83 = mul nsw i64 %82, %16
+  %84 = getelementptr inbounds i32, ptr %18, i64 %83
+  %85 = sext i32 %.02 to i64
+  %86 = getelementptr inbounds i32, ptr %84, i64 %85
+  %87 = load i32, ptr %86, align 4
+  %88 = mul nsw i32 %.02, 2
+  %89 = sext i32 %61 to i64
+  %90 = mul nsw i64 %89, %20
+  %91 = getelementptr inbounds i32, ptr %22, i64 %90
+  %92 = sext i32 %61 to i64
+  %93 = getelementptr inbounds i32, ptr %91, i64 %92
+  store i32 %88, ptr %93, align 4
+  %94 = add nsw i32 %.02, 1
+  %95 = add nsw i32 %.01, 2
+  br label %96
 
-95:                                               ; preds = %65
-  %96 = mul nsw i32 10, 2
-  %97 = icmp slt i32 %93, %96
-  br i1 %97, label %65, label %98, !llvm.loop !24
+96:                                               ; preds = %65
+  %97 = mul nsw i32 10, 2
+  %98 = icmp slt i32 %94, %97
+  br i1 %98, label %65, label %99, !llvm.loop !24
 
-98:                                               ; preds = %95
+99:                                               ; preds = %96
   call void @llvm.stackrestore.p0(ptr %6)
   ret void
 }

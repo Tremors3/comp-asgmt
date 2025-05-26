@@ -94,7 +94,7 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="lf-ndd-test"
+SOURCE_FILE="lf-fusion-simple"
 #IS_LL_FILE=true
 IS_LL_FILE=false
 
