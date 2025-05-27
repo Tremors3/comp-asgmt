@@ -58,3 +58,21 @@ void withIf() {
     j++;
   } while (j < N);
 }
+
+void withCounter() {
+  int N = 10, i = 0, j = 0, c = 0;
+  int B[N] = {}, A[N] = {};
+
+  do {
+    A[i] = i;
+
+    i++;
+  } while (i < N);
+
+  do {
+    B[j] = j;
+
+    c++;
+    j++;
+  } while (j < N);
+}
