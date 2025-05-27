@@ -10,6 +10,7 @@
 //
 // License: GPL3
 //============================================================================//
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
@@ -22,6 +23,7 @@
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/Function.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Operator.h>
@@ -96,7 +98,7 @@ private:
   }
 
   /**
-   * Check if both guard condition are equal by comparing every component
+   * Check if both guard conditions are equal by comparing every component
    * of the condition.
    */
   bool areGuardsEquivalent(BasicBlock *firGuard, BasicBlock *secGuard) const {
@@ -706,17 +708,23 @@ private:
     return nullptr;
   }
 
+  /**
+   * Replace a branch instruction with another one
+   */
   void moveBranch(Instruction *L2incInst, PHINode *L2Phi,
                   BranchInst *L1BranchInst, BranchInst *L2branchInst) {
+    // Move the increment instruction for the phi
     L2incInst->moveAfter(L2Phi);
-    L1BranchInst->replaceAllUsesWith(L2branchInst);
 
+    // Replace the first loop branch with the second loop one
+    L1BranchInst->replaceAllUsesWith(L2branchInst);
     L2branchInst->moveBefore(L1BranchInst);
     L1BranchInst->eraseFromParent();
   }
 
   /**
    * Move all the phis at the top of the basic block.
+   * All of the phis need to be at the top of the basic block.
    */
   void orderPHIs(BasicBlock *BB) {
     for (auto &inst : *BB)
@@ -746,7 +754,7 @@ private:
 
   bool combinedBodyAndLatchFusion(LFCandidate &lfc1, LFCandidate &lfc2,
                                   bool secondDBL, bool bothDifferent,
-                                  LoopInfo &LI) {
+                                  LoopInfo &LI, Function &F) {
 
     SmallVector<Instruction *, 8> instToMove;
     SmallVector<PHINode *, 8> phiToUpdate;
@@ -771,10 +779,16 @@ private:
     // one we need to update the incoming blocks of the phi instructions.
     updatePHIs(&phiToUpdate, lfc1);
 
+    // If the second loop has the body and latch separated
     if (secondDBL) {
+
+      // If also the first loop has the body and latch separated
       if (bothDifferent) {
 
+        // Get the parent for the increment instrucion
         BasicBlock *L1IncInstBB = lfc1.incInst->getParent();
+        // Get the branch instruction for the basic block that contains
+        // the increment instruction
         BranchInst *L1IncInstBBBranchInst =
             dyn_cast<BranchInst>(L1IncInstBB->getTerminator());
 
@@ -786,6 +800,8 @@ private:
       }
 
       SmallVector<BasicBlock *, 8> BBToMove;
+      // Save the basic block to move from the second loop to the
+      // first one
       for (auto S : lfc2.headerBranch->successors()) {
         BBToMove.push_back(S);
       }
@@ -794,30 +810,42 @@ private:
         for (auto succ : successors(BB)) {
           if (!std::count(BBToMove.begin(), BBToMove.end(), succ)) {
             for (auto &inst : *BB) {
+              // For every instruction for every basic block of the second loop
+              // and for every successors replace its successor with the
+              // latch of the first loop
               inst.replaceUsesOfWith(BB->getSingleSuccessor(), lfc1.latch);
-              if (isa<PHINode>(inst)) {
-                phiToUpdate.push_back(dyn_cast<PHINode>(&inst));
-              }
+              // Collect the phi to be updated if there are any
+              // if (isa<PHINode>(inst)) {
+              //   phiToUpdate.push_back(dyn_cast<PHINode>(&inst));
+              // }
             }
           }
         }
+        // Register the second loop basic block to the first loop
         lfc1.loop->addBasicBlockToLoop(BB, LI);
+        // Move the second loop basic block to the first loop
         BB->moveBefore(lfc1.latch);
       }
 
+      // Create a dummy branch instruction for the second loop:
+      // if you don't plan to erase unused basick block LLVM will throw
+      // an exception because it will not find a terminator instruction
+      // for the second loop
       BranchInst::Create(lfc2.latch, lfc2.header);
+      lfc2.indPhi->replaceAllUsesWith(lfc1.indPhi);
     }
 
     // Updating Phi Instructions Incoming Blocks
-    updatePHIs(&phiToUpdate, lfc1);
+    // updatePHIs(&phiToUpdate, lfc1);
 
     // Swap the exit of L1 with the exit of L2
-    for (auto U : predecessors(lfc1.exit)) {
-      for (auto &I : *U) {
+    for (auto BB : predecessors(lfc1.exit)) {
+      for (auto &I : *BB) {
         I.replaceUsesOfWith(lfc1.exit, lfc2.exit);
       }
     }
 
+    // Swap the exit of the guard with the exit of L2
     if (lfc1.guardBranch) {
       for (auto succ : successors(lfc1.guardBranch)) {
         if (succ != lfc1.preheader) {
@@ -826,11 +854,18 @@ private:
       }
     }
 
+    // Reorder the phis
     orderPHIs(lfc1.header);
+
+    // Eliminate unused basic blocks: l1exit, and loop2
+    EliminateUnreachableBlocks(F);
 
     return true;
   }
 
+  /**
+   * Check if the loop has the body and the latch combined
+   */
   bool combinedBodyAndLatch(Loop *L) {
 
     BasicBlock *latch = L->getLoopLatch();
@@ -841,7 +876,7 @@ private:
     return (last == body && body == latch);
   }
 
-  bool fuseLoops(Loop *firstLoop, Loop *secondLoop, LoopInfo &LI) {
+  bool fuseLoops(Loop *firstLoop, Loop *secondLoop, LoopInfo &LI, Function &F) {
 
     LFCandidate lfc1, lfc2;
     constructCandidate(firstLoop, &lfc1);
@@ -851,19 +886,19 @@ private:
     if (combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Second loop has the body and the latch combined.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, false, false, LI);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, false, false, LI, F);
     }
 
     if (combinedBodyAndLatch(firstLoop)) {
       utils::debug("[LF-LF] First loop has the body and the latch combined.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, true, false, LI);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, true, false, LI, F);
     }
 
     if (!combinedBodyAndLatch(firstLoop) && !combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Both loops have the body and the latch different.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, true, true, LI);
+      return combinedBodyAndLatchFusion(lfc1, lfc2, true, true, LI, F);
     }
 
     return false;
@@ -909,7 +944,7 @@ private:
         utils::debug("[LF] Couple is valid.", utils::PURPLE);
 
       bool isCoupleFused =
-          isCoupleValid && fuseLoops(Worklist[first], Worklist[second], LI);
+          isCoupleValid && fuseLoops(Worklist[first], Worklist[second], LI, F);
 
       if (isCoupleFused) {
         utils::debug("[LF] Couple fused successfully.", utils::PURPLE);
