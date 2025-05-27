@@ -12,7 +12,6 @@
 //============================================================================//
 #include "Utils.hpp"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
@@ -740,25 +739,31 @@ private:
     for (PHINode *phi : *phiToUpdate) {
       // For phi instructions inside the header
       if (lfc1.header == phi->getParent()) {
-        // For every incomung value for the phi
+
+        // For every incoming value for the phi
         for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
+        
           Value *incVal = phi->getIncomingValue(i);
+        
           if (Instruction *inc = dyn_cast<Instruction>(incVal)) {
             // If the incoming value is an instruction set the incoming basic
             // block as the latch of the first loop
             phi->setIncomingBlock(i, lfc1.latch);
           } else if (isa<Constant>(incVal)) {
             // If the incoming value is a constant set the incoming basic block
-            // as the previous basic block of the first loop header
-            phi->setIncomingBlock(i, lfc1.header->getPrevNode());
+            // as the preheader of the first loop
+            phi->setIncomingBlock(i, lfc1.preheader);
           }
         }
-      }
+      } else { /* For simplicity we ignore phis located outside the header */ }
     }
     phiToUpdate->clear();
   }
 
-  bool doFusion(LFCandidate &lfc1, LFCandidate &lfc2, bool secondDBL,
+  /**
+   * Fuse two loops together
+   */
+  void doFusion(LFCandidate &lfc1, LFCandidate &lfc2, bool secondDBL,
                 bool bothDifferent, LoopInfo &LI, Function &F) {
 
     SmallVector<Instruction *, 8> instToMove;
@@ -865,7 +870,6 @@ private:
     // Eliminate unused basic blocks, usually l1exit, l2header and l2latch
     EliminateUnreachableBlocks(F);
 
-    return true;
   }
 
   /**
@@ -883,7 +887,7 @@ private:
     return (last == body && body == latch);
   }
 
-  bool fuseLoops(Loop *firstLoop, Loop *secondLoop, LoopInfo &LI, Function &F) {
+  void fuseLoops(Loop *firstLoop, Loop *secondLoop, LoopInfo &LI, Function &F) {
 
     LFCandidate lfc1, lfc2;
     // Populate lfc1 and lfc2
@@ -897,7 +901,7 @@ private:
     if (combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Second loop has the body and the latch combined.",
                    utils::BLUE);
-      return doFusion(lfc1, lfc2, false, false, LI, F);
+      doFusion(lfc1, lfc2, false, false, LI, F);
     }
 
     // If first loop has body and latch combined.
@@ -905,17 +909,16 @@ private:
     if (combinedBodyAndLatch(firstLoop)) {
       utils::debug("[LF-LF] First loop has the body and the latch combined.",
                    utils::BLUE);
-      return doFusion(lfc1, lfc2, true, false, LI, F);
+      doFusion(lfc1, lfc2, true, false, LI, F);
     }
 
     // If both loop have different body and latch
     if (!combinedBodyAndLatch(firstLoop) && !combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Both loops have the body and the latch different.",
                    utils::BLUE);
-      return doFusion(lfc1, lfc2, true, true, LI, F);
+      doFusion(lfc1, lfc2, true, true, LI, F);
     }
 
-    return false;
   }
 
   /* ------------------------------------------------------------------------ */
@@ -954,20 +957,17 @@ private:
       bool isCoupleValid =
           analyzeCouple(Worklist[first], Worklist[second], &DT, &PDT, &SE, &DI);
 
-      if (isCoupleValid)
+      if (isCoupleValid) {
         utils::debug("[LF] Couple is valid.", utils::PURPLE);
-
-      bool isCoupleFused =
-          isCoupleValid && fuseLoops(Worklist[first], Worklist[second], LI, F);
-
-      if (isCoupleFused) {
+        fuseLoops(Worklist[first], Worklist[second], LI, F);
         utils::debug("[LF] Couple fused successfully.", utils::PURPLE);
+
         outs() << '\n';
         F.print(outs());
         outs() << '\n';
       }
 
-      Transformed |= isCoupleFused;
+      Transformed |= isCoupleValid;
     }
 
     return Transformed;

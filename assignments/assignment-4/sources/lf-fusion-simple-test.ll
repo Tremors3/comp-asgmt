@@ -1,5 +1,5 @@
-; ModuleID = '/home/herry/GitHub/comp-asgmt/assignments/assignment-4/sources/lf-fusion-simple.bc'
-source_filename = "/home/herry/GitHub/comp-asgmt/assignments/assignment-4/sources/lf-fusion-simple.c"
+; ModuleID = '/home/tremore/Programming/GitHub/comp-asgmt/assignments/assignment-4/sources/lf-fusion-simple-test.bc'
+source_filename = "/home/tremore/Programming/GitHub/comp-asgmt/assignments/assignment-4/sources/lf-fusion-simple-test.c"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-pc-linux-gnu"
 
@@ -172,6 +172,53 @@ define dso_local void @withIf() #0 {
   ret void
 }
 
+; Function Attrs: noinline nounwind sspstrong uwtable
+define dso_local void @withCounter() #0 {
+  %1 = zext i32 10 to i64
+  %2 = call ptr @llvm.stacksave.p0()
+  %3 = alloca i32, i64 %1, align 16
+  %4 = mul nuw i64 %1, 4
+  call void @llvm.memset.p0.i64(ptr align 16 %3, i8 0, i64 %4, i1 false)
+  %5 = zext i32 10 to i64
+  %6 = alloca i32, i64 %5, align 16
+  %7 = mul nuw i64 %5, 4
+  call void @llvm.memset.p0.i64(ptr align 16 %6, i8 0, i64 %7, i1 false)
+  br label %8
+
+8:                                                ; preds = %12, %0
+  %.01 = phi i32 [ 0, %0 ], [ %11, %12 ]
+  %9 = sext i32 %.01 to i64
+  %10 = getelementptr inbounds i32, ptr %6, i64 %9
+  store i32 %.01, ptr %10, align 4
+  %11 = add nsw i32 %.01, 1
+  br label %12
+
+12:                                               ; preds = %8
+  %13 = icmp slt i32 %11, 10
+  br i1 %13, label %8, label %14, !llvm.loop !13
+
+14:                                               ; preds = %12
+  br label %15
+
+15:                                               ; preds = %20, %14
+  %.02 = phi i32 [ 0, %14 ], [ %19, %20 ]
+  %.0 = phi i32 [ 0, %14 ], [ %18, %20 ]
+  %16 = sext i32 %.02 to i64
+  %17 = getelementptr inbounds i32, ptr %3, i64 %16
+  store i32 %.02, ptr %17, align 4
+  %18 = add nsw i32 %.0, 1
+  %19 = add nsw i32 %.02, 1
+  br label %20
+
+20:                                               ; preds = %15
+  %21 = icmp slt i32 %19, 10
+  br i1 %21, label %15, label %22, !llvm.loop !14
+
+22:                                               ; preds = %20
+  call void @llvm.stackrestore.p0(ptr %2)
+  ret void
+}
+
 attributes #0 = { noinline nounwind sspstrong uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #1 = { nocallback nofree nosync nounwind willreturn }
 attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
@@ -192,3 +239,5 @@ attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
 !10 = distinct !{!10, !7}
 !11 = distinct !{!11, !7}
 !12 = distinct !{!12, !7}
+!13 = distinct !{!13, !7}
+!14 = distinct !{!14, !7}
