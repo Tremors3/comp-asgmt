@@ -10,7 +10,9 @@
 //
 // License: GPL3
 //============================================================================//
+#include "Utils.hpp"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
@@ -34,8 +36,6 @@
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <vector>
-
-#include "Utils.hpp"
 
 using namespace llvm;
 
@@ -733,17 +733,23 @@ private:
   }
 
   /**
-   * Updates the phi instruction incoming blocks reguarding the values.
+   * Update the incomig basic block for the phis that are moved inside the first
+   * loop header
    */
   void updatePHIs(SmallVector<PHINode *, 8> *phiToUpdate, LFCandidate &lfc1) {
     for (PHINode *phi : *phiToUpdate) {
       // For phi instructions inside the header
       if (lfc1.header == phi->getParent()) {
+        // For every incomung value for the phi
         for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
           Value *incVal = phi->getIncomingValue(i);
           if (Instruction *inc = dyn_cast<Instruction>(incVal)) {
+            // If the incoming value is an instruction set the incoming basic
+            // block as the latch of the first loop
             phi->setIncomingBlock(i, lfc1.latch);
           } else if (isa<Constant>(incVal)) {
+            // If the incoming value is a constant set the incoming basic block
+            // as the previous basic block of the first loop header
             phi->setIncomingBlock(i, lfc1.header->getPrevNode());
           }
         }
@@ -752,9 +758,8 @@ private:
     phiToUpdate->clear();
   }
 
-  bool combinedBodyAndLatchFusion(LFCandidate &lfc1, LFCandidate &lfc2,
-                                  bool secondDBL, bool bothDifferent,
-                                  LoopInfo &LI, Function &F) {
+  bool doFusion(LFCandidate &lfc1, LFCandidate &lfc2, bool secondDBL,
+                bool bothDifferent, LoopInfo &LI, Function &F) {
 
     SmallVector<Instruction *, 8> instToMove;
     SmallVector<PHINode *, 8> phiToUpdate;
@@ -857,7 +862,7 @@ private:
     // Reorder the phis
     orderPHIs(lfc1.header);
 
-    // Eliminate unused basic blocks: l1exit, and loop2
+    // Eliminate unused basic blocks, usually l1exit, l2header and l2latch
     EliminateUnreachableBlocks(F);
 
     return true;
@@ -873,32 +878,41 @@ private:
     BasicBlock *last =
         body == latch ? L->getExitBlock()->getPrevNode() : latch->getPrevNode();
 
+    // If these three are the same it means there is only the latch basic block
+    // between the loop header and the exit.
     return (last == body && body == latch);
   }
 
   bool fuseLoops(Loop *firstLoop, Loop *secondLoop, LoopInfo &LI, Function &F) {
 
     LFCandidate lfc1, lfc2;
+    // Populate lfc1 and lfc2
     constructCandidate(firstLoop, &lfc1);
     constructCandidate(secondLoop, &lfc2);
 
-    // Works if fist loop has combined body and latch
+    // If second loop has combined body and latch.
+    // The first loop could have combined body and latch or not , but we care
+    // only to move the instructions of the second loop header inside the
+    // first loop one
     if (combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Second loop has the body and the latch combined.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, false, false, LI, F);
+      return doFusion(lfc1, lfc2, false, false, LI, F);
     }
 
+    // If first loop has body and latch combined.
+    // The second loop has not.
     if (combinedBodyAndLatch(firstLoop)) {
       utils::debug("[LF-LF] First loop has the body and the latch combined.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, true, false, LI, F);
+      return doFusion(lfc1, lfc2, true, false, LI, F);
     }
 
+    // If both loop have different body and latch
     if (!combinedBodyAndLatch(firstLoop) && !combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Both loops have the body and the latch different.",
                    utils::BLUE);
-      return combinedBodyAndLatchFusion(lfc1, lfc2, true, true, LI, F);
+      return doFusion(lfc1, lfc2, true, true, LI, F);
     }
 
     return false;
