@@ -12,29 +12,13 @@
 //============================================================================//
 #include "Utils.hpp"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include <llvm/ADT/DepthFirstIterator.h>
-#include <llvm/ADT/SmallBitVector.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/DependenceAnalysis.h>
-#include <llvm/Analysis/LoopInfo.h>
-#include <llvm/Analysis/PostDominators.h>
 #include <llvm/Analysis/ScalarEvolution.h>
-#include <llvm/Analysis/TargetLibraryInfo.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/CFG.h>
-#include <llvm/IR/Constant.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/Instruction.h>
-#include <llvm/IR/Instructions.h>
-#include <llvm/IR/Operator.h>
-#include <llvm/IR/PassManager.h>
-#include <llvm/IR/Value.h>
+#include <llvm/Analysis/PostDominators.h>
+#include <llvm/Analysis/LoopInfo.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/Error.h>
-#include <vector>
+#include <llvm/IR/PassManager.h>
 
 using namespace llvm;
 
@@ -742,9 +726,9 @@ private:
 
         // For every incoming value for the phi
         for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
-        
+
           Value *incVal = phi->getIncomingValue(i);
-        
+
           if (Instruction *inc = dyn_cast<Instruction>(incVal)) {
             // If the incoming value is an instruction set the incoming basic
             // block as the latch of the first loop
@@ -901,24 +885,29 @@ private:
     if (combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Second loop has the body and the latch combined.",
                    utils::BLUE);
+
       doFusion(lfc1, lfc2, false, false, LI, F);
+      return;
     }
 
     // If first loop has body and latch combined.
     // The second loop has not.
     if (combinedBodyAndLatch(firstLoop)) {
       utils::debug("[LF-LF] First loop has the body and the latch combined.",
-                   utils::BLUE);
+        utils::BLUE);
+
       doFusion(lfc1, lfc2, true, false, LI, F);
+      return;
     }
 
     // If both loop have different body and latch
     if (!combinedBodyAndLatch(firstLoop) && !combinedBodyAndLatch(secondLoop)) {
       utils::debug("[LF-LF] Both loops have the body and the latch different.",
                    utils::BLUE);
-      doFusion(lfc1, lfc2, true, true, LI, F);
-    }
 
+      doFusion(lfc1, lfc2, true, true, LI, F);
+      return;
+    }
   }
 
   /* ------------------------------------------------------------------------ */
