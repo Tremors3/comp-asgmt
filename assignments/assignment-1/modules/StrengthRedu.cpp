@@ -80,7 +80,7 @@ namespace GraboidPasses {
   * instruction, with optional adjustments applied if the integer constant 
   * is not a precise power of two. The parameter k defines the maximum allowed 
   * difference between the constant value and the nearest power of two. 
-  * This value also determines the maximum number of adjustments that will 
+  * This value determines the maximum allowed number of adjustments that will 
   * be made to the result of the shift operation.
   */
   bool StrengthRedu::convertMulToShlWithAdjustment(Instruction &BinInst, unsigned opnum1, unsigned opnum2, unsigned k) {
@@ -130,8 +130,8 @@ namespace GraboidPasses {
         // Applying the first adjustment.
         Instruction* AdjInst = StrengthRedu::addAdjustInstruction(ShiftInst, AdjInstType, ShiftInst, Oper1);
 
-        // Other Adjustments if needed (only when k is greather than 1).
-        for (unsigned int i = 0; i < k - 1; ++i) {
+        // Other Adjustments if needed (exactly AbsDifference - 1).
+        for (unsigned int i = 0; i < AbsDifference - 1; ++i) {
           AdjInst = StrengthRedu::addAdjustInstruction(AdjInst, AdjInstType, AdjInst, Oper1);
         }
         

@@ -94,8 +94,9 @@ check_create_dir "$MODULES_DIR"
 check_create_dir "$BUILD_DIR"
 
 # [EDIT] Source File
-SOURCE_FILE="lf-guard-auto-2"
-#IS_LL_FILE=false
+SOURCE_FILE="lf-fusion-simple-test"
+#IS_LL_FILE=true
+IS_LL_FILE=false
 
 # [EDIT] Assignment
 ASSIGNMENT="LoopFusion"
@@ -141,6 +142,8 @@ execute_passes() {
 
 echo "Running opt to apply pass..."; echo
 
-execute_passes "-loop-fusion-pass"
+execute_passes "loop(loop-rotate),function(loop-simplify),function(gb-loop-fusion)"
+#execute_passes "loop(loop-rotate),function(gb-loop-fusion)"
+#execute_passes "function(gb-loop-fusion)"
 
 echo; echo "Build and processing completed."
