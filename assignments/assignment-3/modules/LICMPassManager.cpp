@@ -51,21 +51,29 @@ namespace graboidpasses::licm {
            << "\033[0;38:5:255m" << L.getLoopID()
            << ", Depth: " << L.getLoopDepth() << "\033[0m\n";  // DEBUG
 
-    std::set<Instruction*> candidateInstructions, invariantInstructions;
+    InstrMap candidateInstructions, invariantInstructions;
 
+    // 1. Analisi loop-invarianti:
+    //    Costruisce la gerarchia delle istruzioni invarianti
     LoopInvariantAnalysis lia(&L);
     lia.analyzeLoop();
-    invariantInstructions = lia.getInvariantInstructions();
+    invariantInstructions = lia.getInvariants();
 
+    // 2. Filtraggio:
+    //    Seleziona tra le invarianti quelle realmente spostabili
     if (!invariantInstructions.empty()) {
       FilterCandidateAnalysis fca(&L, domtree, &invariantInstructions);
       fca.filterCandidates();
       candidateInstructions = fca.getCandidates();
     }
 
+    // 3. Code motion:
+    //    Sposta le istruzioni candidate nel preheader rispettando le dipendenze
     if (!candidateInstructions.empty()) {
       CodeMotion cm(&L, &candidateInstructions);
       cm.executeMotion();
+
+      // Segnala se è stata effettuata almeno una trasformazione
       if(cm.hasOneMotionPerformed())
         setTransformed();
     }

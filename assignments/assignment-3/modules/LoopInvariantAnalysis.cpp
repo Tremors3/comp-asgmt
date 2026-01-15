@@ -8,7 +8,6 @@
 // License: GPL3
 //==============================================================================
 #include "LoopInvariantAnalysis.hpp"
-#include "Utils.hpp"
 
 namespace graboidpasses::licm {
 
@@ -20,39 +19,56 @@ namespace graboidpasses::licm {
     if (!loop->isLoopSimplifyForm())
       return;
 
-    for (BasicBlock *BB : loop->getBlocks()) {
-      for (Instruction &I : *BB) {
-        Instruction *Inst = &I;
+    InstrSet Visited;
 
-        if ( (!visited.count(Inst)) && isInstrLoopInvariant(Inst) ) {
-          invariantInstructions.insert(Inst);
+    // Pulisce la gerarchia precedente
+    invariantInstructionHierarchy.clear();
 
-          utils::printInstruction(
-            "\033[1;38:5:033m[LICM-ANALYSIS] Invariant Instruction:\033[0m\t"
-            "\033[0;38:5:033m", Inst
-          ); // DEBUG
-        }
-      }
-    }
+    // Itera le istruzioni di ogni BB appartenente al loop
+    for (BasicBlock *BB : loop->getBlocks())
+      for (Instruction &I : *BB)
+        isInstructionLoopInvariant(&I, Visited);
   }
 
   /**
    * Controlla che l'istruzione come parametro sia loop-invariant.
    * In caso affermativo restituisce true, altrimenti false.
    */
-  bool LoopInvariantAnalysis::isInstrLoopInvariant(Instruction *I) {
-    if (visited.count(I))
-      return invariantInstructions.count(I);
+  bool LoopInvariantAnalysis::isInstructionLoopInvariant(
+    Instruction *I, InstrSet &Visited) {
 
-    visited.insert(I);
+    // Se già visitata, ritorna se era considerata invariant
+    if (Visited.count(I))
+      return invariantInstructionHierarchy.count(I);
 
+    Visited.insert(I);
+
+    // Solo le operazioni binarie sono considerate per questa analisi
     if (!I->isBinaryOp())
       return false;
 
-    for (Value *Operand : I->operands()) {
-      if (!isValueLoopInvariant(Operand))
+    // Insieme temporaneo delle dipendenze loop-invariant dell'istruzione
+    InstrSet deps;
+
+    // Controlla tutti gli operandi
+    for (Value *Op : I->operands()) {
+      if (!isValueLoopInvariant(Op, Visited))
         return false;
+
+      // Se l'operando è un'istruzione nel loop ed
+      // è loop-invariant, allora è una dipendenza
+      if (Instruction *OpI = dyn_cast<Instruction>(Op))
+        if (loop->contains(OpI))
+          deps.insert(OpI);
     }
+
+    // L'istruzione è loop-invariant, quindi aggiorniamo la gerarchia
+    invariantInstructionHierarchy[I] = std::move(deps);
+
+    printInstruction(
+      "\033[1;38:5:033m[LICM-ANALYSIS] Invariant Instruction:\033[0m\t"
+      "\033[0;38:5:033m", I
+    ); // DEBUG
 
     return true;
   }
@@ -61,27 +77,28 @@ namespace graboidpasses::licm {
    * Controlla che il valore come parametro sia loop-invariant.
    * In caso affermativo restituisce true, altrimenti false.
    */
-  bool LoopInvariantAnalysis::isValueLoopInvariant(Value *V) {
+  bool LoopInvariantAnalysis::isValueLoopInvariant(
+    Value *V, InstrSet &Visited) {
+
+    // Le costanti sono invariant
     if (isa<Constant>(V))
       return true;
 
-    if (Instruction *I = dyn_cast<Instruction>(V)) {
-      if (!loop->contains(I))
-        return true;
+    // Assumiamo che se non si tratta di un'istruzione,
+    // allora non è invariant
+    Instruction *I = dyn_cast<Instruction>(V);
+    if (!I) return false;
 
-      if (isa<PHINode>(I))
-        return false;
+    // Istruzione fuori dal loop quindi invariant
+    if (!loop->contains(I))
+      return true;
 
-      if (!visited.count(I))
-        // L'istruzione che definisce l'operando non e' stata ancora visitata.
-        // La visitiamo per decretare che sia loop-invariant, o meno.
-        return isInstrLoopInvariant(I);
+    // PHI nodes interni al loop non sono invariant
+    if (isa<PHINode>(I))
+      return false;
 
-      // L'istruzione che definisce l'operando è già stata visitata.
-      return invariantInstructions.count(I);
-    }
-
-    return false;
+    // Controlliamo gli operandi ricorsivamente
+    return isInstructionLoopInvariant(I, Visited);
   }
 
 } // namespace graboidpasses::licm

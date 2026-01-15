@@ -15,11 +15,17 @@
 
 using namespace llvm;
 
-namespace graboidpasses::utils {
+namespace graboidpasses::licm {
+  
+  // Alias per un insieme di istruzioni
+  using InstrSet = std::unordered_set<Instruction*>;
 
+  // Alias per una mappa da istruzione a insieme di istruzioni
+  using InstrMap = std::unordered_map<Instruction*, InstrSet>;
+  
   void printInstruction(std::string text, Instruction *I,
     std::string terminator = "\033[0m\n");
-
-} // namespace graboidpasses::utils
+  
+} // namespace graboidpasses::licm
 
 #endif // GRABOID_UTILS_H

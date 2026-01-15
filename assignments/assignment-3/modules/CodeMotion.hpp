@@ -15,14 +15,16 @@
 #include <llvm/IR/BasicBlock.h>
 #include <bits/stdc++.h>
 
+#include "Utils.hpp"
+
 using namespace llvm;
 
 namespace graboidpasses::licm {
 
   class CodeMotion {
   public:
-    CodeMotion(Loop *L, const std::set<Instruction*> *CI)
-      : loop(L), candidateInstructions(CI) {};
+    CodeMotion(Loop *L, const InstrMap *CI)
+      : loop(L), candidateInstructionHierarchy(CI) {};
 
     void executeMotion();
 
@@ -33,10 +35,11 @@ namespace graboidpasses::licm {
   private:
     Loop *loop;
     bool onePerformed = false;
-    const std::set<Instruction*> *candidateInstructions;
+    const InstrMap *candidateInstructionHierarchy;
 
-    bool moveInstrBeforeLoop(Instruction *I);
     Instruction *getPreheaderLastInstruction();
+    bool moveInstrBeforeLoop(Instruction *I);
+    void moveInstructionDFS(Instruction *I, InstrSet &Visited);
 
     void setOneMotionPerformed() { onePerformed = true; }
 

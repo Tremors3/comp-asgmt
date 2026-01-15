@@ -17,6 +17,8 @@
 #include <llvm/IR/Dominators.h>
 #include <bits/stdc++.h>
 
+#include "Utils.hpp"
+
 using namespace llvm;
 
 namespace graboidpasses::licm {
@@ -27,17 +29,16 @@ namespace graboidpasses::licm {
 
     void analyzeLoop();
 
-    const std::set<Instruction*> &getInvariantInstructions() const {
-      return invariantInstructions;
+    const InstrMap &getInvariants() const {
+      return invariantInstructionHierarchy;
     }
 
   private:
     Loop *loop;
-    std::set<Instruction*> visited;
-    std::set<Instruction*> invariantInstructions;
+    InstrMap invariantInstructionHierarchy;
 
-    bool isValueLoopInvariant(Value *V);
-    bool isInstrLoopInvariant(Instruction *I);
+    bool isValueLoopInvariant(Value *V, InstrSet &Visited);
+    bool isInstructionLoopInvariant(Instruction *I, InstrSet &Visited);
   };
 
 } // namespace graboidpasses::licm

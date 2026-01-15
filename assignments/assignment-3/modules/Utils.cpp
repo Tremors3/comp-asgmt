@@ -9,11 +9,11 @@
 //==============================================================================
 #include "Utils.hpp"
 
-namespace graboidpasses::utils{
+namespace graboidpasses::licm{
 
   void printInstruction(
     std::string text, Instruction *I, std::string terminator) {
     outs() << text; I->print(outs()); outs() << terminator;  // DEBUG
   }
 
-} // namespace graboidpasses::utils
+} // namespace graboidpasses::licm

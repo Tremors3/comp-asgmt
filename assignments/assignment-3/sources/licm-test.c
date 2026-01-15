@@ -101,7 +101,7 @@ void MORTA_controlla_se_la_variabile_e_morta_fuori_dal_loop() {
     }
     
 }
-void VIVA_controlla_se_la_variabile_e_morta_fuori_dal_loop() {
+void VIVA_controlla_se_la_variabile_e_viva_fuori_dal_loop() {
     int a = rand();
     int b = rand();
     

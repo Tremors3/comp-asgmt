@@ -16,6 +16,8 @@
 #include <llvm/Analysis/LoopInfo.h>
 #include <bits/stdc++.h>
 
+#include "Utils.hpp"
+
 using namespace llvm;
 
 namespace graboidpasses::licm {
@@ -26,6 +28,7 @@ namespace graboidpasses::licm {
       : loopinfo(LI), domtree(DT) {}
 
     void startPass();
+
     bool hasTransformed() const { return onePerformed; }
 
   private:

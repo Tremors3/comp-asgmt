@@ -8,41 +8,84 @@
 // License: GPL3
 //==============================================================================
 #include "FilterCandidateAnalysis.hpp"
-#include "Utils.hpp"
 
 namespace graboidpasses::licm {
 
   /**
-   * Filtra le istruzioni loop-invariant per determinare se sono candidate allo
-   * spostamento.
+   * Filtra le istruzioni loop-invariant per determinare quali sono
+   * idonee per la code motion. Il risultato è una gerarchia di
+   * istruzioni candidate per preservare l'ordine delle dipendenze.
    */
   void FilterCandidateAnalysis::filterCandidates() {
+    InstrSet Visited;
 
-    for (Instruction* I : *invariantInstructions) {
+    // Pulisce la gerarchia precedente
+    candidateInstructionHierarchy.clear();
 
-      bool definedBeforeUse = \
-        FilterCandidateAnalysis::isDefinedBeforeUse(I);
-
-      bool dominatesExits   = \
-        FilterCandidateAnalysis::instructionDominatesAllExits(I);
-
-      bool deadOutsideLoop  = \
-        FilterCandidateAnalysis::isInstructionDeadOutsideLoop(I);
-
-      bool isCandidate = \
-        definedBeforeUse && (dominatesExits || deadOutsideLoop);
-
-      if (isCandidate) {
-        candidateInstructions.insert(I);
-
-        utils::printInstruction(
-          "\033[1;38:5:214m[LICM-FILTERING] Movable Instruction:\033[0m\t"
-          "\033[0;38:5:214m", I
-        );  // DEBUG
-      }
-    }
+    // Una DFS per ognuna delle istruzioni loop-invariant.
+    // La visita in post-order garantisce che vengano controllate
+    // prima le dipendenze
+    for (const auto &[I, _] : *invariantInstructionHierarchy)
+      processInstructionDFS(I, Visited);
   }
 
+  /**
+   * Processa ricorsivamente una istruzione loop-invariant e le sue dipendenze
+   * per determinare se si tratta di un'istruzione candidata alla code motion.
+   * 
+   * Si tratta di una DFS in post-order in modo che le dipendenze siano
+   * processate prima dell'istruzione corrente.
+   */
+  void FilterCandidateAnalysis::processInstructionDFS(
+    Instruction* I, InstrSet &Visited) {
+    if (Visited.count(I))
+      return;
+    
+    Visited.insert(I);
+
+    // 1. Visita prima le dipendenze
+    auto It = invariantInstructionHierarchy->find(I);
+    if (It != invariantInstructionHierarchy->end()) {
+      for (Instruction *Dep : It->second)
+        processInstructionDFS(Dep, Visited);
+    }
+
+    // 2. Applica la logica di filtraggio
+    bool definedBeforeUse = \
+      FilterCandidateAnalysis::isDefinedBeforeUse(I);
+
+    bool dominatesExits   = \
+      FilterCandidateAnalysis::instructionDominatesAllExits(I);
+
+    bool deadOutsideLoop  = \
+      FilterCandidateAnalysis::isInstructionDeadOutsideLoop(I);
+
+    bool isCandidate = \
+      definedBeforeUse && (dominatesExits || deadOutsideLoop);
+
+    if (!isCandidate)
+      return;
+
+    // 3. Inserisci nella gerarchia se tutte le dipendenze sono candidate
+    InstrSet CandidateDeps;
+
+    if (It != invariantInstructionHierarchy->end()) {
+      for (Instruction *Dep : It->second) {
+        if (!candidateInstructionHierarchy.count(Dep))
+          return; // dipendenza non candidata (non spostabile)
+        CandidateDeps.insert(Dep);
+      }
+    }
+
+    candidateInstructionHierarchy[I] = CandidateDeps;
+
+    printInstruction(
+      "\033[1;38:5:214m[LICM-FILTERING] Movable Instruction:\033[0m\t"
+      "\033[0;38:5:214m", I
+    );  // DEBUG
+
+  }
+  
   /**
    * Controlla che l'istruzione come parametro domini tutte le uscite del loop.
    * Restituisce true se l'istruzione si trova in un blocco che domina tutte le
@@ -166,7 +209,9 @@ namespace graboidpasses::licm {
     return true;
   }
 
-  /** NON UTILIZZATO. Controllo inutile data la forma SSA.
+  /* ------------------------------------------------------------------------ */
+
+  /** NON UTILIZZATA. Controllo inutile data la forma SSA.
    * Controlla che il loop non contenga molteplici definizioni del valore
    * definito dall'istruzione passata come parametro.
    */
