@@ -48,7 +48,7 @@ private:
   /**
    * Checks for unwanted instructions inside the preheader.
    */
-  bool cleanFromUnwantedInstructions(BasicBlock *BB,
+  bool isCleanFromUnwantedInstructions(BasicBlock *BB,
                                      std::set<Instruction *> whitelist) const {
     for (Instruction &I : *BB)
       if (whitelist.count(&I) != 1)
@@ -85,19 +85,18 @@ private:
    * of the condition.
    */
   bool areGuardsEquivalent(BasicBlock *firGuard, BasicBlock *secGuard) const {
-    if (auto *firCond = dyn_cast<ICmpInst>(getGuardBranchCondition(firGuard))) {
-      if (auto *secCond =
-              dyn_cast<ICmpInst>(getGuardBranchCondition(secGuard))) {
-        if (firCond->getPredicate() == secCond->getPredicate() &&
-            firCond->getOperand(0) == secCond->getOperand(0) &&
-            firCond->getOperand(1) == secCond->getOperand(1)) {
-          utils::debug("[LF-ADJ] Both guards have the same condition.",
-                       utils::DARK_GREEN);
-          return true;
-        }
-      }
-    }
-    return false;
+    auto *firCond = dyn_cast<ICmpInst>(getGuardBranchCondition(firGuard));
+    auto *secCond = dyn_cast<ICmpInst>(getGuardBranchCondition(secGuard));
+    
+    if (!firCond || !secCond)
+      return false;
+    
+    return (
+      firCond->getPredicate() == secCond->getPredicate() &&
+      firCond->getOperand(0) == secCond->getOperand(0) &&
+      firCond->getOperand(1) == secCond->getOperand(1) &&
+      firCond->getType() == secCond->getType()
+    );
   }
 
   /* ------------------------------------------------------------------------ */
@@ -139,21 +138,21 @@ private:
     // CHECKING FOR UNWANTED INSTRUCTIONS
 
     // Checking for unwanted instructions in the first loop exit block
-    if (!cleanFromUnwantedInstructions(SL_preheader,
-                                       {SL_preheader->getTerminator()})) {
-      utils::debug("[LF-ADJ] Preheader not clean.", utils::YELLOW);
-      return false;
-    }
-
-    // Checking for unwanted instructions in the second loop preheader
-    if (!cleanFromUnwantedInstructions(FL_exitBlock,
+    if (!isCleanFromUnwantedInstructions(FL_exitBlock,
                                        {FL_exitBlock->getTerminator()})) {
       utils::debug("[LF-ADJ] Exit block not clean.", utils::YELLOW);
       return false;
     }
 
+    // Checking for unwanted instructions in the second loop preheader
+    if (!isCleanFromUnwantedInstructions(SL_preheader,
+                                       {SL_preheader->getTerminator()})) {
+      utils::debug("[LF-ADJ] Preheader not clean.", utils::YELLOW);
+      return false;
+    }
+
     // Checking for unwanted instructions in the second loop guard
-    if (!cleanFromUnwantedInstructions(
+    if (!isCleanFromUnwantedInstructions(
             secondGuard,
             {secondGuard->getTerminator(),
              dyn_cast<Instruction>(getGuardBranchCondition(secondGuard))})) {
@@ -167,6 +166,8 @@ private:
       utils::debug("[LF-ADJ] Guards are not equivalents.", utils::YELLOW);
       return false;
     }
+
+    utils::debug("[LF-ADJ] Both guards have the same condition.", utils::BLUE);
 
     return true;
   }
@@ -207,7 +208,7 @@ private:
     // CHECKING FOR UNWANTED INSTRUCTIONS
 
     // Checking for unwanted instructions in the first loop exit block
-    if (!cleanFromUnwantedInstructions(SL_preheader,
+    if (!isCleanFromUnwantedInstructions(SL_preheader,
                                        {SL_preheader->getTerminator()})) {
       utils::debug("[LF-ADJ] Preheader not clean.", utils::YELLOW);
       return false;
@@ -924,39 +925,53 @@ private:
     ScalarEvolution &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
     DependenceInfo &DI = AM.getResult<DependenceAnalysis>(F);
 
-    SmallVector<Loop *, 8> Worklist;
+    // Raggruppa gli innermost loop per loop parent
+    DenseMap<Loop *, SmallVector<Loop *, 4>> LoopsByParent;
 
-    for (Loop *TopLevelLoop : LI)
-      for (Loop *L : depth_first(TopLevelLoop))
-        if (L->isInnermost())
-          Worklist.push_back(L);
+    for (Loop *TopLevelLoop : LI) {
+      for (Loop *L : depth_first(TopLevelLoop)) {
+        if (!L->isInnermost())
+          continue;
 
-    if (Worklist.size() < 2) {
-      utils::debug("[LF] Less than 2 top-level loops in function.",
-                   utils::YELLOW);
-      return false;
+        // If parent == nullptr: top level loop
+        Loop *Parent = L->getParentLoop();
+        LoopsByParent[Parent].push_back(L);
+      }
     }
 
     bool Transformed = false;
 
-    for (unsigned long i = Worklist.size() - 1; i > 0; --i) {
+    // Processa gli innermost loops per loop parent
+    for (auto &[Parent, Loops] : LoopsByParent) {
+      if (Loops.size() < 2)
+        continue;
 
-      unsigned long first = i, second = i - 1;
+      // Analizza coppie di loop allo stesso livello
+      for (unsigned i = Loops.size() - 1; i > 0; --i) {
+        // I loop che condividono lo stesso parent loop
+        // si trovano sullo stesso livello di annidamento
+        Loop *First  = Loops[i];
+        Loop *Second = Loops[i - 1];
 
-      bool isCoupleValid =
-          analyzeCouple(Worklist[first], Worklist[second], &DT, &PDT, &SE, &DI);
+        bool IsValid = analyzeCouple(
+          First, Second, &DT, &PDT, &SE, &DI
+        );
 
-      if (isCoupleValid) {
-        utils::debug("[LF] Couple is valid.", utils::PURPLE);
-        fuseLoops(Worklist[first], Worklist[second], LI, F);
+        if (!IsValid)
+          continue;
+
+        utils::debug("[LF] Valid couple found.", utils::PURPLE);
+
+        fuseLoops(First, Second, LI, F);
+
         utils::debug("[LF] Couple fused successfully.", utils::PURPLE);
 
         outs() << '\n';
         F.print(outs());
         outs() << '\n';
-      }
 
-      Transformed |= isCoupleValid;
+        Transformed = true;
+      }
     }
 
     return Transformed;
