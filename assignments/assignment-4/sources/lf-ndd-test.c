@@ -1,68 +1,204 @@
-/* ------------------------- ARRAY, MATRIX NND TESTS ------------------------ */
-
-void array_ndd_test_INDEX_INC(int N) {
-  N = 10;
-  int A[N] = {};
-
-  int i = 0, j = 0;
-  do {
-
-    A[i] = i + 1;
-
-    i++;
-  } while (i < N);
-
-  do {
-
-    int c = A[j + 3];
-
-    j++;
-  } while (j < N);
-}
-
 #include <stdlib.h>
 
-void array_ndd_test_CONSTANT(int N) {
+/* ------------------------------- ARRAY TESTS ------------------------------ */
+
+/* --------------------- ARRAY - NON NEGATIVE DEPENDANT --------------------- */
+
+void array_NotND_SAME_INDEXES_INCREMENT_OF_1(int N) {
   N = 10;
   int A[N] = {};
-
-  int i = 0, j = 0, d = 9;
-  do {
-    j++;
-
-    i++;
-    A[i + j + d] = i + 1;
-
-    i++;
-  } while (i < N);
-
+  
+  int i = 0, j = 0, c = 0;
   do {
 
-    int c = A[j + 3];
-
-    j++;
-  } while (j < N);
-}
-
-void array_ndd_test_CONSTANT_2(int N) {
-  N = 10;
-  int A[N] = {};
-
-  int i = 0, j = 0;
-  do {
     A[i] = i + 1;
 
     i++;
   } while (i < N);
 
   do {
-    int c = A[j + 3];
+
+    c = A[j];
 
     j++;
   } while (j < N);
 }
 
-void matrix_ndd_test() {
+void array_NotND_SAME_INDEXES_INCREMENT_OF_2(int N) {
+  N = 10;
+  int A[N] = {};
+  
+  int i = 0, j = 0, c = 0;
+  do {
+
+    A[i] = i + 1;
+
+    i += 2; // + 2
+  } while (i < N);
+
+  do {
+
+    c = A[j];
+
+    j += 2; // + 2
+  } while (j < N * 2);
+}
+
+void array_NotND_SAME_INDEXES_INCREMENT_OF_3_INLINE(int N) {
+  N = 10;
+  int A[N] = {};
+  
+  int i = 0, j = 0, c = 0;
+  do {
+
+    A[i + 3] = i + 1; // + 3 inline
+
+    i++;
+  } while (i < N);
+
+  do {
+
+    c = A[j + 3]; // + 3 inline
+
+    j++;
+  } while (j < N);
+}
+
+void array_NotND_SAME_INDEXES_START_AT_4(int N) {
+  N = 10;
+  int A[N] = {};
+  
+  int i = 4, j = 4, c = 0; // starts at 4
+  do {
+
+    A[i] = i + 1;
+
+    i++;
+  } while (i < N + 4);
+
+  do {
+
+    c = A[j];
+
+    j++;
+  } while (j < N + 4);
+}
+
+/* ----------------------- ARRAY - NEGATIVE DEPENDANT ----------------------- */
+
+void array_IsND_DIFFERENT_INDEXES_INCREMENT_OF_2(int N) {
+  N = 10;
+  int A[N] = {};
+  
+  int i = 0, j = 0, c = 0;
+  do {
+
+    A[i] = i + 1;
+
+    i++;
+  } while (i < N);
+
+  do {
+
+    c = A[j];
+
+    j += 2; // + 2
+  } while (j < N);
+}
+
+void array_IsND_DIFFERENT_INDEXES_INCREMENT_OF_3_INLINE(int N) {
+  N = 10;
+  int A[N] = {};
+  
+  int i = 0, j = 0, c = 0;
+  do {
+
+    A[i] = i + 1;
+
+    i++;
+  } while (i < N);
+
+  do {
+
+    c = A[j + 3]; // + 3 inline
+
+    j++;
+  } while (j < N);
+}
+
+void array_IsND_DIFFERENT_INDEXES_START_AT_4(int N) {
+  N = 10;
+  int A[N] = {};
+  
+  int i = 0, j = 4, c = 0; // load starts at 4
+  do {
+
+    A[i] = i + 1;
+
+    i++;
+  } while (i < N);
+
+  do {
+
+    c = A[j];
+
+    j++;
+  } while (j < N);
+}
+
+/* ------------------------------ MATRIX TESTS ------------------------------ */
+
+/* -------------------- MATRIXES - NON NEGATIVE DEPENDANT ------------------- */
+
+void matrix_NotND_SAME_INDEXES_INCREMENT_OF_1(int N) {
+  N = 10;
+  int A[N][N] = {}, c = 0;
+  
+  int i = 0, j = 0;
+  int x = 0, y = 0;
+  do {
+
+    A[i][j] = i + 1;
+
+    i++;
+    j++;
+  } while (i < N);
+
+  do {
+
+    c = A[x][y];
+
+    x++;
+    y++;
+  } while (j < N);
+}
+
+/* ---------------------- MATRIXES - NEGATIVE DEPENDANT --------------------- */
+
+void matrix_IsND_DIFFERENT_INDEXES_INCREMENT_OF_1(int N) {
+  N = 10;
+  int A[N][N] = {}, c = 0;
+  
+  int i = 0, j = 0;
+  int x = 0, y = 0;
+  do {
+
+    A[i][j] = i + 1;
+
+    i++;
+    j++;
+  } while (i < N * 2);
+
+  do {
+
+    c = A[x][y];
+
+    x += 2; // + 2
+    y++;
+  } while (j < N * 2);
+}
+
+void matrix_x4_IsND_DIFFERENT_INDEXES_INCREMENT_OF_2() {
   int N = 10;
   int D = N + 3;
   int A[D][D][D][D] = {};
@@ -83,75 +219,52 @@ void matrix_ndd_test() {
   } while (j < N * 2);
 }
 
-void matrix_ndd_test_non_so_come_chiamarlo() {
-  int N = 10;
-  int D = N + 3;
-  int A[D + 3][D - 1][D * 4][D / 10] = {};
+/* ----------------------- SPECIAL CASES - ASSUMING ND ---------------------- */
 
-  int i = 0, j = 0;
-  do {
-    int ii = 0;
-    do {
-      int iii = 0;
-      do {
-        int iiii = 0;
-        do {
-          A[i][ii][iii][iiii] = i + 1;
-          iiii++;
-        } while (iiii < N);
-        iii++;
-      } while (iii < N);
-      ii++;
-    } while (ii < N);
-    i++;
-  } while (i < N);
-
+void matrix_IsND_SPECIAL_CASE_RANDOM_INDEX(int N) {
+  N = 10;
+  int A[N][N] = {}, c = 0;
+  
+  int i = rand(), j = 0;
+  int x = 0, y = 0;
   do {
 
-    int jj = 0;
-    do {
-      int jjj = 0;
-      do {
-        int jjjj = 0;
-        do {
-          int d = A[j][jj][jjj][jjjj];
-          jjjj++;
-        } while (jjjj < N);
-        jjj++;
-      } while (jjj < N);
-      jj++;
-    } while (jj < N);
+    A[i][j] = i + 1;
 
-    j = j + 2;
-  } while (j < N * 2);
-}
-
-
-void matrix_ndd_test_multiple_matrices() {
-  int a = 0, b = 0;
-  int N = 10;
-  int D = N + 3;
-  int A[D][D][D][D] = {};
-  int B[D][D];
-  int C[D][D];
-
-  int i = 0, j = 0, k = 0;
-  do {
-
-    A[i][i][i][i] = i + 1;
-    B[i][i] = i * 2;
-    a +=  A[i][i][i][i];
-
-    i++;
-  } while (i < N);
-
-  do {
-
-    int d = A[j][j][j+1][j];
-    int g = B[k][j];
-    C[i][i] = j * 2;
-
+    i += 2;
     j++;
-    k = k + 2;
+  } while (i < N * 2);
+
+  do {
+
+    c = A[x][y];
+
+    x++;
+    y++;
   } while (j < N * 2);
 }
+
+void matrix_IsND_SPECIAL_CASE_PARAMETER_INDEX(int N, int i) {
+  N = 10;
+  int A[N][N] = {}, c = 0;
+  
+  int j = 0; // i defined as a parameter
+  int x = 0, y = 0;
+  do {
+
+    A[i][j] = i + 1;
+
+    i += 2;
+    j++;
+  } while (i < N * 2);
+
+  do {
+
+    c = A[x][y];
+
+    x++;
+    y++;
+  } while (j < N * 2);
+}
+
+/* ----------------------------------- END ---------------------------------- */
