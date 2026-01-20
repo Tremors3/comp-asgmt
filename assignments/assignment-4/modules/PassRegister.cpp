@@ -14,6 +14,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include <llvm/Analysis/DependenceAnalysis.h>
 #include <llvm/Analysis/ScalarEvolution.h>
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include <llvm/Analysis/PostDominators.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/Passes/PassBuilder.h>
@@ -316,256 +317,106 @@ private:
   /* ------------------------------------------------------------------------ */
 
   /**
-   * Recursively evaluates a Value representing an index expression.
-   * Supports constants, casts, binary operations and a simplified PHI handling.
-   * Uses a conservative cycle detection limited to PHI nodes.
+   * Returns a simplified SCEVAddRecExpr of the pointer operand of a load/store.
+   * Mdelling it into a polynomial recurrence of the form {base,+,stride}<loop>.
+   * 
+   * Example: a[i] inside a loop with stride 4 is {%a, +, 4}<for.body>
    */
-  int64_t resolveIndexValue(Value *curr,
-                            std::unordered_set<Value *> &visitedPHIs,
-                            bool &failed, bool failPHIs = true) const {
-    if (failed || !curr)
-      return 0;
+  const SCEVAddRecExpr* getSCEVAddRecExpr(Loop *L, Instruction *I, 
+                                          ScalarEvolution *SE) const {
+      // Get the pointer operand of the load/store
+      Value *ptr = getLoadStorePointerOperand(I);
 
-    // Constant
-    if (auto *CI = dyn_cast<ConstantInt>(curr))
-      return CI->getSExtValue();
+      // Get the SCEV at the scope of the loop
+      const SCEV *ptrSCEV = SE->getSCEVAtScope(ptr, L);
 
-    auto *I = dyn_cast<Instruction>(curr);
-    if (!I) {
-      utils::debug("[LF-NDD] Unsupported value type.", utils::YELLOW);
-      failed = true;
-      return 0;
-    }
-
-    // Casts
-    if (auto *Cast = dyn_cast<CastInst>(I)) {
-      if (isa<SExtInst>(Cast) || isa<ZExtInst>(Cast))
-        return resolveIndexValue(Cast->getOperand(0), visitedPHIs, failed, failPHIs);
-    }
-
-    // PHI
-    if (auto *PHI = dyn_cast<PHINode>(I)) {
-
-      /* Conservative Failure */
-      if (failPHIs) {
-        utils::debug("[LF-NDD] PHI node encountered, conservative failure.",
-                    utils::YELLOW);
-        failed = true;
-        return 0;
+      // Convert to an AddRecExpr (polynomial recurrence) if possible
+      if (const SCEVAddRecExpr *rec = dyn_cast<SCEVAddRecExpr>(ptrSCEV)) {
+          return rec;
       }
 
-      /* Cycle Detectection */
-      if (visitedPHIs.count(curr)) {
-        return 0;
-      }
-
-      visitedPHIs.insert(curr);
-
-      int64_t init = resolveIndexValue(
-        PHI->getIncomingValue(0), visitedPHIs, failed, failPHIs);
-      int64_t step = resolveIndexValue(
-        PHI->getIncomingValue(1), visitedPHIs, failed, failPHIs);
-
-      return init + step;
-
-      /* This approximation assumes a canonical loop PHI with exactly two incoming
-       * values, modeling a simple induction variable.
-       * - 'init' represents the initial value before entering the loop.
-       * - 'step' represents a constant increment applied at each iteration.
-       *
-       * The analysis assumes that 'step' is loop-invariant and does not change
-       * across iterations. It also ignores the long-term evolution of the index:
-       * even if the load index grows faster than the store index, only the
-       * first-iteration ordering is considered.
-       */
-    }
-
-    // Binary operations
-    if (!I->isBinaryOp()) {
-      utils::debug("[LF-NDD] Unsupported instruction type.", utils::YELLOW);
-      failed = true;
-      return 0;
-    }
-
-    int64_t lhs = resolveIndexValue(I->getOperand(0), visitedPHIs, failed, failPHIs);
-    int64_t rhs = resolveIndexValue(I->getOperand(1), visitedPHIs, failed, failPHIs);
-
-    if (failed)
-      return 0;
-
-    switch (I->getOpcode()) {
-    case Instruction::Add:
-      return lhs + rhs;
-    case Instruction::Sub:
-      return lhs - rhs;
-    case Instruction::Mul:
-      return lhs * rhs;
-    case Instruction::SDiv:
-    case Instruction::UDiv:
-      if (rhs == 0) {
-        utils::debug("[LF-NDD] Division by zero.", utils::YELLOW);
-        failed = true;
-        return 0;
-      }
-      return lhs / rhs;
-    default:
-      utils::debug("[LF-NDD] Unsupported binary opcode.", utils::YELLOW);
-      failed = true;
-      return 0;
-    }
+      return nullptr;
   }
 
   /**
-   * Entry point for index extraction starting from an instruction.
-   * Initializes PHI cycle tracking and delegates evaluation to resolveIndexValue.
+   * Checks if the distance between two memory accesses is negative.
+   * Only works for accesses with the same base and equal stride.
+   *
+   * Example:
+   * store: a[i]       -> {%a, +, 4}<for.body>
+   * load:  a[i+8]     -> {%a, +, 4}<for.body>
+   * delta = base_store - base_load = 0 - 8 = -8 -> negative distance
    */
-  int64_t extractIndex(Instruction *I, bool &failed) const {
-    if (failed || !I)
-      return 0;
+  bool isDistanceNegativeSE(Loop *loop1, Loop *loop2,
+                            StoreInst *store, LoadInst *load,
+                            ScalarEvolution *SE) const {
 
-    bool failPHIs = false; // Fail evaluation upon finding a PHI instruction
-    std::unordered_set<Value *> visitedPHIs;
-    return resolveIndexValue(I, visitedPHIs, failed, failPHIs);
-  }
+      // Get polynomial recurrences for both instructions
+      const SCEVAddRecExpr *recS = getSCEVAddRecExpr(loop1, store, SE);
+      const SCEVAddRecExpr *recL = getSCEVAddRecExpr(loop2, load, SE);
 
-  /**
-   * Evaluates a flattened index expression used inside GEP instructions.
-   * Handles constant factors, casted indices and multiplicative expressions.
-   * Designed for simple affine-like patterns only.
-   */
-  int64_t evaluateIndexExpr(Value *V, bool &failed) const {
-    if (failed || !V)
-      return 0;
+      // Cannot analyze if either recurrence is missing, assume dependant
+      if (!recS || !recL) {
+        
+        utils::debug("[LF-NDD] Recurrence expression missing!"
+          "Assuming negative dependant.", utils::YELLOW);
 
-    // Constant
-    if (auto *CI = dyn_cast<ConstantInt>(V)) {
-      return CI->getSExtValue();
-    }
-
-    // SExt / ZExt
-    if (auto *Ext = dyn_cast<CastInst>(V)) {
-      if (isa<SExtInst>(Ext) || isa<ZExtInst>(Ext)) {
-        return extractIndex(Ext, failed);
+        return true;
       }
-    }
 
-    // Instruction
-    if (auto *I = dyn_cast<Instruction>(V)) {
+      // Check if the memory accesses have the same base pointer (alloca)
+      // Example: a[i] vs b[i], different base pointer (alloca), no dependency
+      if (SE->getPointerBase(recS) != SE->getPointerBase(recL)) return false;
 
-      // Mul
-      if (I->getOpcode() == Instruction::Mul) {
-        int64_t result = 1;
+      // Debug Output
+      utils::debug("[LF-NDD] New L/S Couple Found:", utils::YELLOW);
+      utils::debugValue("[LF-NDD] --> Store:", store, utils::YELLOW, "", '\t');
+      utils::debugSCEV("", recS);
+      utils::debugValue("[LF-NDD] --> Load: ", load, utils::YELLOW, "", '\t');
+      utils::debugSCEV("", recL);
 
-        for (Value *Op : I->operands()) {
-          result *= evaluateIndexExpr(Op, failed);
-          if (failed) return 0;
-        }
-        return result;
+      // Extract the base (start of the recurrence) and stride
+      const SCEV *baseS = recS->getStart(); // es, %a
+      const SCEV *baseL = recL->getStart(); // es, %a
+
+      const SCEV *strideS = recS->getStepRecurrence(*SE); // es, 4
+      const SCEV *strideL = recL->getStepRecurrence(*SE); // es, 4
+
+      // Check that stride is non-zero and equal for both accesses
+      if (!SE->isKnownNonZero(strideS) || strideS != strideL) {
+        
+        // Debug Output
+        utils::debug("[LF-NDD] --> Strides are different or zero!", 
+          utils::YELLOW, "", utils::NO_TERM);
+        utils::debugSCEV(" (S = ", strideS, "", "", utils::NO_TERM);
+        utils::debugSCEV(" != ", strideL, "", "", utils::NO_TERM);
+        utils::debug(" = L)");
+        
+        return true;
       }
-    }
 
-    // Unsupported case
-    failed = true;
-    return 0;
-  }
+      // Compute the distance between the starting addresses
+      // Example: base1 = 0, base2 = 8 -> delta = -8
+      const SCEV *delta = SE->getMinusSCEV(baseS, baseL); // base1 - base2
 
-  /**
-   * Computes the index contribution of a single GEP instruction.
-   * Each index operand is evaluated and summed to form the level index.
-   */
-  int64_t computeGEPLevelOffset(GetElementPtrInst *gep, bool &failed) const {
-    if (failed || !gep)
-      return 0;
+      // Normalize delta according to stride sign
+      const SCEV *dependenceDist =
+          SE->isKnownNegative(strideS) ? SE->getNegativeSCEV(delta) : delta;
 
-    int64_t offset = 0;
+      // Check if the distance is negative
+      bool negative = SE->isKnownPredicate(
+          ICmpInst::ICMP_SLT, dependenceDist, SE->getZero(delta->getType())
+      );
 
-    for (Value *Idx : gep->indices()) {
-      offset += evaluateIndexExpr(Idx, failed);
-      if (failed) return 0;
-    }
+      // Debug Output
+      if (negative) {
+        utils::debug("[LF-NDD] --> Negative difference! (", 
+          utils::YELLOW, "", utils::NO_TERM);
+        dyn_cast<SCEVConstant>(delta)->getAPInt().print(outs(), true);
+        utils::debug(")");
+      }
 
-    return offset;
-  }
-
-  /**
-   * Iteratively traverses a chain of nested GEP instructions.
-   * Accumulates indexes until the base Alloca instruction is reached.
-   */
-  int64_t computeTotalGEPOffset(GetElementPtrInst *gep, Value *&alloca,
-                                bool &failed) const {
-    if (!gep) {
-      failed = true;
-      return 0;
-    }
-
-    unsigned depth = 0;
-    int64_t totalOffset = 0;
-    Value *currentPtr = gep;
-
-    while (auto *currentGEP = dyn_cast<GetElementPtrInst>(currentPtr)) {
-      totalOffset += computeGEPLevelOffset(currentGEP, failed);
-      if (failed) return 0;
-
-      currentPtr = currentGEP->getPointerOperand();
-      depth++;
-    }
-
-    if (isa<AllocaInst>(currentPtr)) {
-      alloca = currentPtr;
-      utils::debug("[LF-NDD] Array Depth: " + std::to_string(depth));
-    } else {
-      failed = true;
-    }
-
-    return totalOffset;
-  }
-
-  /**
-   * Computes and compares memory indexes of a store-load pair.
-   * Returns true if a negative dependency distance is conservatively detected.
-   */
-  bool isDistanceNegativeCustom(StoreInst *store, LoadInst *load) const {
-    GetElementPtrInst *storeGEP = dyn_cast<GetElementPtrInst>(
-                          store->getPointerOperand()),
-                      *loadGEP = dyn_cast<GetElementPtrInst>(
-                          load->getPointerOperand());
-
-    if (!storeGEP || !loadGEP) {
-      utils::debug("[LF-NDD] One of the pointer operands is not a GEP.",
-                   utils::YELLOW);
-      return false;
-    }
-
-    bool failed = false;
-    Value *storeAlloca = nullptr;
-    Value *loadAlloca = nullptr;
-
-    int64_t storeResult = computeTotalGEPOffset(storeGEP, storeAlloca, failed);
-    int64_t loadResult = computeTotalGEPOffset(loadGEP, loadAlloca, failed);
-
-    if (storeAlloca != loadAlloca) {
-      utils::debug(
-          "[LF-NDD] The load and store don't refer to the same allocation.",
-          utils::YELLOW);
-      return false;
-    }
-
-    if (failed) {
-      utils::debug("[LF-NDD] Operation failed! Assuming negative dependant.",
-                   utils::YELLOW);
-      return true;
-    }
-
-    utils::debug("[LF-NDD] New Couple:");
-    utils::debug("[LF-NDD] --> Store Result: " + std::to_string(storeResult));
-    utils::debug("[LF-NDD] --> Load Result: " + std::to_string(loadResult));
-
-    if (storeResult < loadResult) {
-      utils::debug("[LF-NDD] The difference is negative!", utils::YELLOW);
-      return true;
-    }
-
-    return false;
+      return negative;
   }
 
   /* ------------------------------------------------------------------------ */
@@ -593,7 +444,8 @@ private:
    * If they are, then checks if their dependency distance is negative.
    */
   bool areNegativeDistanceDependent(Loop *firstLoop, Loop *secondLoop,
-                                    DependenceInfo *DI) const {
+                                    DependenceInfo *DI, 
+                                    ScalarEvolution *SE) const {
 
     std::vector<StoreInst *> FirstLoopStoreInst, SecondLoopStoreInst;
     std::vector<LoadInst *> FirstLoopLoadInst, SecondLoopLoadInst;
@@ -607,14 +459,16 @@ private:
     // and the load instruction of the second loop
     for (StoreInst *Store : FirstLoopStoreInst)
       for (LoadInst *Load : SecondLoopLoadInst)
-        if (DI->depends(Store, Load, true) && isDistanceNegativeCustom(Store, Load))
+        if (DI->depends(Store, Load, true) && isDistanceNegativeSE(
+          firstLoop, secondLoop, Store, Load, SE))
           return true;
 
     // Checking the dependency between the load instruction of the first loop
     // and the store instruction of the second loop
     for (LoadInst *Load : FirstLoopLoadInst)
       for (StoreInst *Store : SecondLoopStoreInst)
-        if (DI->depends(Store, Load, true) && isDistanceNegativeCustom(Store, Load))
+        if (DI->depends(Store, Load, true) && isDistanceNegativeSE(
+          firstLoop, secondLoop, Store, Load, SE))
           return true;
 
     return false;
@@ -667,7 +521,7 @@ private:
     bool isCoupleTCE = areTripCountEquivalent(FL, SL, SE);
     utils::debugYesNo("[LF-TCE] Is couple TCE?: \t", isCoupleTCE);
 
-    bool isCoupleNotNDD = !areNegativeDistanceDependent(FL, SL, DI);
+    bool isCoupleNotNDD = !areNegativeDistanceDependent(FL, SL, DI, SE);
     utils::debugYesNo("[LF-NDD] Couple isn't NDD: \t", isCoupleNotNDD);
 
     return isCoupleAdjacent && isCoupleCFE && isCoupleTCE && isCoupleNotNDD;
