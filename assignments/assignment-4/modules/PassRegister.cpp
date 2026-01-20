@@ -316,239 +316,259 @@ private:
   /* ------------------------------------------------------------------------ */
 
   /**
-   * Recursively resolves an integer value from a given value.
+   * Recursively evaluates a Value representing an index expression.
+   * Supports constants, casts, binary operations and a simplified PHI handling.
+   * Uses a conservative cycle detection limited to PHI nodes.
    */
-  int64_t resolveIndexValue(Value *curr, std::set<Value *> *visited,
-                            bool &failed) const {
+  int64_t resolveIndexValue(Value *curr,
+                            std::unordered_set<Value *> &visitedPHIs,
+                            bool &failed, bool failPHIs = true) const {
+    if (failed || !curr)
+      return 0;
+
+    // Constant
+    if (auto *CI = dyn_cast<ConstantInt>(curr))
+      return CI->getSExtValue();
+
+    auto *I = dyn_cast<Instruction>(curr);
+    if (!I) {
+      utils::debug("[LF-NDD] Unsupported value type.", utils::YELLOW);
+      failed = true;
+      return 0;
+    }
+
+    // Casts
+    if (auto *Cast = dyn_cast<CastInst>(I)) {
+      if (isa<SExtInst>(Cast) || isa<ZExtInst>(Cast))
+        return resolveIndexValue(Cast->getOperand(0), visitedPHIs, failed, failPHIs);
+    }
+
+    // PHI
+    if (auto *PHI = dyn_cast<PHINode>(I)) {
+
+      /* Conservative Failure */
+      if (failPHIs) {
+        utils::debug("[LF-NDD] PHI node encountered, conservative failure.",
+                    utils::YELLOW);
+        failed = true;
+        return 0;
+      }
+
+      /* Cycle Detectection */
+      if (visitedPHIs.count(curr)) {
+        return 0;
+      }
+
+      visitedPHIs.insert(curr);
+
+      int64_t init = resolveIndexValue(
+        PHI->getIncomingValue(0), visitedPHIs, failed, failPHIs);
+      int64_t step = resolveIndexValue(
+        PHI->getIncomingValue(1), visitedPHIs, failed, failPHIs);
+
+      return init + step;
+
+      /* This approximation assumes a canonical loop PHI with exactly two incoming
+       * values, modeling a simple induction variable.
+       * - 'init' represents the initial value before entering the loop.
+       * - 'step' represents a constant increment applied at each iteration.
+       *
+       * The analysis assumes that 'step' is loop-invariant and does not change
+       * across iterations. It also ignores the long-term evolution of the index:
+       * even if the load index grows faster than the store index, only the
+       * first-iteration ordering is considered.
+       */
+    }
+
+    // Binary operations
+    if (!I->isBinaryOp()) {
+      utils::debug("[LF-NDD] Unsupported instruction type.", utils::YELLOW);
+      failed = true;
+      return 0;
+    }
+
+    int64_t lhs = resolveIndexValue(I->getOperand(0), visitedPHIs, failed, failPHIs);
+    int64_t rhs = resolveIndexValue(I->getOperand(1), visitedPHIs, failed, failPHIs);
+
     if (failed)
       return 0;
 
-    if (Instruction *currInst = dyn_cast<Instruction>(curr)) {
-
-      if (visited->count(curr) > 0)
-        return 0;
-      visited->insert(curr);
-
-      // Handle SExt/ZExt early
-      if (SExtInst *sext = dyn_cast<SExtInst>(currInst))
-        return resolveIndexValue(sext->getOperand(0), visited, failed);
-      if (ZExtInst *zext = dyn_cast<ZExtInst>(currInst))
-        return resolveIndexValue(zext->getOperand(0), visited, failed);
-
-      if (PHINode *phi = dyn_cast<PHINode>(currInst)) {
-        int64_t sum = 0;
-        for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
-          sum += resolveIndexValue(phi->getIncomingValue(i), visited, failed);
-        }
-        return sum;
-      }
-
-      if (!currInst->isBinaryOp()) {
-        utils::debug("[LF-NDD] The instruction isn't binary.", utils::YELLOW);
+    switch (I->getOpcode()) {
+    case Instruction::Add:
+      return lhs + rhs;
+    case Instruction::Sub:
+      return lhs - rhs;
+    case Instruction::Mul:
+      return lhs * rhs;
+    case Instruction::SDiv:
+    case Instruction::UDiv:
+      if (rhs == 0) {
+        utils::debug("[LF-NDD] Division by zero.", utils::YELLOW);
         failed = true;
         return 0;
       }
+      return lhs / rhs;
+    default:
+      utils::debug("[LF-NDD] Unsupported binary opcode.", utils::YELLOW);
+      failed = true;
+      return 0;
+    }
+  }
 
-      Value *op1 = currInst->getOperand(0);
-      Value *op2 = currInst->getOperand(1);
+  /**
+   * Entry point for index extraction starting from an instruction.
+   * Initializes PHI cycle tracking and delegates evaluation to resolveIndexValue.
+   */
+  int64_t extractIndex(Instruction *I, bool &failed) const {
+    if (failed || !I)
+      return 0;
 
-      int64_t op1res = resolveIndexValue(op1, visited, failed);
-      int64_t op2res = resolveIndexValue(op2, visited, failed);
+    bool failPHIs = false; // Fail evaluation upon finding a PHI instruction
+    std::unordered_set<Value *> visitedPHIs;
+    return resolveIndexValue(I, visitedPHIs, failed, failPHIs);
+  }
 
-      switch (currInst->getOpcode()) {
-      case Instruction::Add:
-        return op1res + op2res;
-      case Instruction::Sub:
-        return op1res - op2res;
-      case Instruction::Mul:
-        return op1res * op2res;
-      case Instruction::UDiv:
-      case Instruction::SDiv:
-        if (op2res == 0) {
-          utils::debug("[LF-NDD] Division by zero.", utils::YELLOW);
-          failed = true;
-          return 0;
-        }
-        return op1res / op2res;
-      default:
-        utils::debug("[LF-NDD] Unsupported operation type.", utils::YELLOW);
-        failed = true;
-        return 0;
-      }
-    } else if (ConstantInt *CI = dyn_cast<ConstantInt>(curr))
+  /**
+   * Evaluates a flattened index expression used inside GEP instructions.
+   * Handles constant factors, casted indices and multiplicative expressions.
+   * Designed for simple affine-like patterns only.
+   */
+  int64_t evaluateIndexExpr(Value *V, bool &failed) const {
+    if (failed || !V)
+      return 0;
+
+    // Constant
+    if (auto *CI = dyn_cast<ConstantInt>(V)) {
       return CI->getSExtValue();
+    }
 
-    utils::debug("[LF-NDD] Unsupported instruction type.", utils::YELLOW);
+    // SExt / ZExt
+    if (auto *Ext = dyn_cast<CastInst>(V)) {
+      if (isa<SExtInst>(Ext) || isa<ZExtInst>(Ext)) {
+        return extractIndex(Ext, failed);
+      }
+    }
+
+    // Instruction
+    if (auto *I = dyn_cast<Instruction>(V)) {
+
+      // Mul
+      if (I->getOpcode() == Instruction::Mul) {
+        int64_t result = 1;
+
+        for (Value *Op : I->operands()) {
+          result *= evaluateIndexExpr(Op, failed);
+          if (failed) return 0;
+        }
+        return result;
+      }
+    }
+
+    // Unsupported case
     failed = true;
     return 0;
   }
 
   /**
-   * Extracts and sums the values of the operands of the given SExt/ZExt
-   * instruction.
-   */
-  int64_t extractIndex(Instruction *inst, bool &failed) const {
-    if (failed)
-      return 0;
-
-    int64_t result = 0;
-    std::set<Value *> visited = {};
-    for (auto &oper : inst->operands()) {
-      result += resolveIndexValue(oper, &visited, failed);
-    }
-    return result;
-  }
-
-  // i.e: ... (c * D2 * D3 * D4) + (i * D2 * D3) + (j * D3) + k
-
-  /**
-   * Recursively computes the product of operands of a given Mul instruction,
-   * extracting values from constants and SExt/ZExt instructions.
-   */
-  int64_t computeOperandProduct(Instruction *current, bool &failed) const {
-    if (failed)
-      return 0;
-
-    int64_t value = 1;
-
-    // current is Mul
-    if (current->getOpcode() == Instruction::Mul) {
-      for (auto &oper : current->operands()) {
-        Value *val = oper.get();
-        if (Instruction *next = dyn_cast<Instruction>(val)) {
-
-          // next is Mul
-          if (next->getOpcode() == Instruction::Mul) {
-            value *= computeOperandProduct(next, failed);
-          }
-
-          // next is SExt
-          else if (isa<SExtInst>(next)) {
-            // getting the current dimension "index"
-            value *= extractIndex(next, failed);
-          }
-
-          // next is ZExt
-          else if (isa<ZExtInst>(next)) {
-            // getting the current dimension "total size"
-            value *= extractIndex(next, failed);
-          }
-
-          // next is ConstantInt
-        } else if (ConstantInt *CI = dyn_cast<ConstantInt>(val)) {
-          return CI->getSExtValue();
-        }
-      }
-    }
-
-    return value;
-  }
-
-  /**
-   * Computes the offset contribution of a single GEP instruction by analyzing
-   * its indices.
+   * Computes the index contribution of a single GEP instruction.
+   * Each index operand is evaluated and summed to form the level index.
    */
   int64_t computeGEPLevelOffset(GetElementPtrInst *gep, bool &failed) const {
-    if (failed)
+    if (failed || !gep)
       return 0;
 
     int64_t offset = 0;
 
-    for (auto &idxIt : gep->indices()) {
-      Value *idx = idxIt;
-
-      // if Constant
-      if (ConstantInt *CI = dyn_cast<ConstantInt>(idx)) {
-        offset += CI->getSExtValue();
-      }
-
-      // if SExt
-      else if (SExtInst *idxSext = dyn_cast<SExtInst>(idx)) {
-        offset += extractIndex(idxSext, failed);
-      }
-
-      // if Mul
-      else if (Instruction *idxMul = dyn_cast<Instruction>(idx)) {
-        if (idxMul->getOpcode() == Instruction::Mul) {
-          offset += computeOperandProduct(idxMul, failed);
-        }
-      }
-
-      // break; // we stop to the first found index.
+    for (Value *Idx : gep->indices()) {
+      offset += evaluateIndexExpr(Idx, failed);
+      if (failed) return 0;
     }
+
     return offset;
   }
 
   /**
-   * Recursively computes the total offset from a nested GEP chain, identifying
-   * the base alloca instruction and the array depth.
+   * Iteratively traverses a chain of nested GEP instructions.
+   * Accumulates indexes until the base Alloca instruction is reached.
    */
-  int64_t computeFullOffsetRecursive(GetElementPtrInst *gep, unsigned level,
-                                     bool &failed, Value *&alloca) const {
+  int64_t computeTotalGEPOffset(GetElementPtrInst *gep, Value *&alloca,
+                                bool &failed) const {
+    if (!gep) {
+      failed = true;
+      return 0;
+    }
 
-    int64_t totalOffset = computeGEPLevelOffset(gep, failed);
+    unsigned depth = 0;
+    int64_t totalOffset = 0;
+    Value *currentPtr = gep;
 
-    Value *ptr = gep->getPointerOperand();
-    if (auto *nestedGEP = dyn_cast<GetElementPtrInst>(ptr)) {
-      totalOffset +=
-          computeFullOffsetRecursive(nestedGEP, level + 1, failed, alloca);
-    } else if (isa<AllocaInst>(ptr)) {
-      alloca = ptr;
-      utils::debug("[LF-NDD] Array Depth: " + std::to_string(level + 1));
+    while (auto *currentGEP = dyn_cast<GetElementPtrInst>(currentPtr)) {
+      totalOffset += computeGEPLevelOffset(currentGEP, failed);
+      if (failed) return 0;
+
+      currentPtr = currentGEP->getPointerOperand();
+      depth++;
+    }
+
+    if (isa<AllocaInst>(currentPtr)) {
+      alloca = currentPtr;
+      utils::debug("[LF-NDD] Array Depth: " + std::to_string(depth));
+    } else {
+      failed = true;
     }
 
     return totalOffset;
   }
 
   /**
-   * Calculates the dependency distance between store and load instructions and
-   * checks if it is negative.
+   * Computes and compares memory indexes of a store-load pair.
+   * Returns true if a negative dependency distance is conservatively detected.
    */
-  bool isDistanceNegative(StoreInst *store, LoadInst *load) const {
+  bool isDistanceNegativeCustom(StoreInst *store, LoadInst *load) const {
     GetElementPtrInst *storeGEP = dyn_cast<GetElementPtrInst>(
                           store->getPointerOperand()),
                       *loadGEP = dyn_cast<GetElementPtrInst>(
                           load->getPointerOperand());
 
     if (!storeGEP || !loadGEP) {
-      utils::debug("[LF-NDD] -- One of the pointer operands is not a GEP.",
+      utils::debug("[LF-NDD] One of the pointer operands is not a GEP.",
                    utils::YELLOW);
       return false;
     }
 
     bool failed = false;
-    Value *storeAlloca = nullptr, *loadAlloca = nullptr;
+    Value *storeAlloca = nullptr;
+    Value *loadAlloca = nullptr;
 
-    // Calculating the offset on which the load/store instruction is performed
-    int64_t storeResult =
-        computeFullOffsetRecursive(storeGEP, 0, failed, storeAlloca);
-    int64_t loadResult =
-        computeFullOffsetRecursive(loadGEP, 0, failed, loadAlloca);
+    int64_t storeResult = computeTotalGEPOffset(storeGEP, storeAlloca, failed);
+    int64_t loadResult = computeTotalGEPOffset(loadGEP, loadAlloca, failed);
 
     if (storeAlloca != loadAlloca) {
       utils::debug(
-          "[LF-NDD] -- The load and store don't refer to the same allocation.",
+          "[LF-NDD] The load and store don't refer to the same allocation.",
           utils::YELLOW);
       return false;
     }
 
     if (failed) {
-      utils::debug("[LF-NDD] -- Operation failed! Assuming negative dependant.",
+      utils::debug("[LF-NDD] Operation failed! Assuming negative dependant.",
                    utils::YELLOW);
       return true;
     }
 
     utils::debug("[LF-NDD] New Couple:");
-    utils::debug("[LF-NDD] -- Store Result: " + std::to_string(storeResult));
-    utils::debug("[LF-NDD] -- Load Result: " + std::to_string(loadResult));
+    utils::debug("[LF-NDD] --> Store Result: " + std::to_string(storeResult));
+    utils::debug("[LF-NDD] --> Load Result: " + std::to_string(loadResult));
 
-    if ((storeResult - loadResult) < 0) {
-      utils::debug("[LF-NDD] -- The difference is negative!", utils::YELLOW);
+    if (storeResult < loadResult) {
+      utils::debug("[LF-NDD] The difference is negative!", utils::YELLOW);
       return true;
     }
 
     return false;
   }
+
+  /* ------------------------------------------------------------------------ */
 
   /**
    * Iterates through the instructions in the loop, saving only the load/store
@@ -587,14 +607,14 @@ private:
     // and the load instruction of the second loop
     for (StoreInst *Store : FirstLoopStoreInst)
       for (LoadInst *Load : SecondLoopLoadInst)
-        if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
+        if (DI->depends(Store, Load, true) && isDistanceNegativeCustom(Store, Load))
           return true;
 
     // Checking the dependency between the load instruction of the first loop
     // and the store instruction of the second loop
     for (LoadInst *Load : FirstLoopLoadInst)
       for (StoreInst *Store : SecondLoopStoreInst)
-        if (DI->depends(Store, Load, true) && isDistanceNegative(Store, Load))
+        if (DI->depends(Store, Load, true) && isDistanceNegativeCustom(Store, Load))
           return true;
 
     return false;
