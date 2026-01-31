@@ -134,7 +134,7 @@ namespace graboidpasses::licm {
   }
 
   /**
-   * Controlla che i basic block che contengono gli utilizzatori non siano
+   * Controlla se i basic block che contengono gli utilizzatori sono
    * raggiungibili tramite visita dei successori del loop.
    */
   bool FilterCandidateAnalysis::isUsedInRegionReachableFromExitBlocks(
@@ -147,9 +147,9 @@ namespace graboidpasses::licm {
 
     for (BasicBlock *Exit : ExitBlocks)
       if(usedInsideBasicBlockRecursive(Exit, UserBlocks, &VisitedBlocks))
-        return false;
+        return true;
 
-    return true;
+    return false;
   }
 
   /**
@@ -178,7 +178,7 @@ namespace graboidpasses::licm {
     if (UserBlocks.empty())
       return true;
 
-    return isUsedInRegionReachableFromExitBlocks(&UserBlocks);
+    return !isUsedInRegionReachableFromExitBlocks(&UserBlocks);
   }
 
   /**
