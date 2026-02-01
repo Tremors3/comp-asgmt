@@ -26,17 +26,17 @@ namespace graboidpasses::lf {
    * instructions.
    */
   void NegativeDistanceDependenceAnalysis::getLoopInstructionByType(
-    Loop *L, std::vector<StoreInst *> *stores, 
-    std::vector<LoadInst *> *loads) const {
+    Loop *L, std::vector<StoreInst *> &stores, 
+    std::vector<LoadInst *> &loads) const {
     
     for (BasicBlock *BB : L->getBlocks()) {
       for (Instruction &I : *BB) {
 
         if (StoreInst *store = dyn_cast<StoreInst>(&I))
-          stores->push_back(store);
+          stores.push_back(store);
 
         else if (LoadInst *load = dyn_cast<LoadInst>(&I))
-          loads->push_back(load);
+          loads.push_back(load);
       }
     }
   }
@@ -47,28 +47,24 @@ namespace graboidpasses::lf {
    */
   bool NegativeDistanceDependenceAnalysis::areNegativeDistanceDependent() const {
 
-    std::vector<StoreInst *> FirstLoopStoreInst, SecondLoopStoreInst;
-    std::vector<LoadInst *> FirstLoopLoadInst, SecondLoopLoadInst;
+    std::vector<StoreInst *> FirstLoopStores, SecondLoopStores;
+    std::vector<LoadInst *> FirstLoopLoads, SecondLoopLoads;
 
-    getLoopInstructionByType(firstLoop, &FirstLoopStoreInst,
-                             &FirstLoopLoadInst);
-    getLoopInstructionByType(secondLoop, &SecondLoopStoreInst,
-                             &SecondLoopLoadInst);
+    getLoopInstructionByType(firstLoop, FirstLoopStores, FirstLoopLoads);
+    getLoopInstructionByType(secondLoop, SecondLoopStores, SecondLoopLoads);
 
-    // Checking the dependency between the store instruction of the first loop
-    // and the load instruction of the second loop
-    for (StoreInst *Store : FirstLoopStoreInst)
-      for (LoadInst *Load : SecondLoopLoadInst)
+    // RAW: store (first loop) -> load (second loop)
+    for (StoreInst *Store : FirstLoopStores)
+      for (LoadInst *Load : SecondLoopLoads)
         if (DI.depends(Store, Load, true) && isDistanceNegativeSE(
           firstLoop, secondLoop, Store, Load))
           return true;
 
-    // Checking the dependency between the load instruction of the first loop
-    // and the store instruction of the second loop
-    for (LoadInst *Load : FirstLoopLoadInst)
-      for (StoreInst *Store : SecondLoopStoreInst)
-        if (DI.depends(Store, Load, true) && isDistanceNegativeSE(
-          secondLoop, firstLoop, Store, Load))
+    // WAR: load (first loop) -> store (second loop)
+    for (LoadInst *Load : FirstLoopLoads)
+      for (StoreInst *Store : SecondLoopStores)
+        if (DI.depends(Load, Store, true) && isDistanceNegativeSE(
+          firstLoop, secondLoop, Load, Store))
           return true;
 
     return false;
@@ -103,65 +99,62 @@ namespace graboidpasses::lf {
    * Only works for accesses with the same base and equal stride.
    *
    * Example:
-   * store: a[i]       -> {%a, +, 4}<for.body>
-   * load:  a[i+8]     -> {%a, +, 4}<for.body>
-   * delta = base_store - base_load = 0 - 8 = -8 -> negative distance
+   * producer: a[i+8]     -> {%a, +, 4}<for.body>
+   * consumer: a[i]       -> {%a, +, 4}<for.body>
+   * delta = consumer_base - producer_base = -8 -> negative distance
    */
   bool NegativeDistanceDependenceAnalysis::isDistanceNegativeSE(
-    Loop *storeLoop, Loop *loadLoop,
-    StoreInst *store, LoadInst *load) const {
+    Loop *producerLoop, Loop *consumerLoop,
+    Instruction *producer, Instruction *consumer) const {
 
     // Get polynomial recurrences for both instructions
-    const SCEVAddRecExpr *recS = getSCEVAddRecExpr(storeLoop, store);
-    const SCEVAddRecExpr *recL = getSCEVAddRecExpr(loadLoop, load);
+    const SCEVAddRecExpr *recP = getSCEVAddRecExpr(producerLoop, producer);
+    const SCEVAddRecExpr *recC = getSCEVAddRecExpr(consumerLoop, consumer);
 
-    // Cannot analyze if either recurrence is missing, assume dependant
-    if (!recS || !recL) {
-      
-      utils::debug("[LF-NDD] Recurrence expression missing!"
-        "Assuming negative dependant.", utils::YELLOW);
-
+    // If recurrence expression is missing assume dependent
+    if (!recP || !recC) {
+      utils::debug("[LF-NDD] Recurrence expression missing! "
+                  "Assuming negative dependent.", utils::YELLOW);
       return true;
     }
 
     // Check if the memory accesses have the same base pointer (alloca)
-    // Example: a[i] vs b[i], different base pointer (alloca), no dependency
-    if (SE.getPointerBase(recS) != SE.getPointerBase(recL)) return false;
+    // Example: a[i] and b[i] have different base pointer, so no dependency
+    if (SE.getPointerBase(recP) != SE.getPointerBase(recC))
+      return false;
 
-    // Debug Output
-    utils::debug("[LF-NDD] New L/S Couple Found:", utils::YELLOW);
-    utils::debugValue("[LF-NDD] --> Store:", store, utils::YELLOW, "", '\t');
-    utils::debugSCEV("", recS);
-    utils::debugValue("[LF-NDD] --> Load: ", load, utils::YELLOW, "", '\t');
-    utils::debugSCEV("", recL);
+    // Debug output
+    utils::debug("[LF-NDD] New Producer/Consumer Couple:", utils::YELLOW);
+    utils::debugValue("[LF-NDD] --> Producer:", producer, utils::YELLOW, "", '\t');
+    utils::debugSCEV("", recP);
+    utils::debugValue("[LF-NDD] --> Consumer:", consumer, utils::YELLOW, "", '\t');
+    utils::debugSCEV("", recC);
 
-    // Extract the base (start of the recurrence) and stride
-    const SCEV *baseS = recS->getStart(); // es, %a
-    const SCEV *baseL = recL->getStart(); // es, %a
+    // Extract base and stride
+    const SCEV *baseP   = recP->getStart(); // es, %a
+    const SCEV *baseC   = recC->getStart(); // es, %a
+    const SCEV *strideP = recP->getStepRecurrence(SE); // es, 4
+    const SCEV *strideC = recC->getStepRecurrence(SE); // es, 4
 
-    const SCEV *strideS = recS->getStepRecurrence(SE); // es, 4
-    const SCEV *strideL = recL->getStepRecurrence(SE); // es, 4
-
-    // Check that stride is non-zero and equal for both accesses
-    if (!SE.isKnownNonZero(strideS) || strideS != strideL) {
+    // Strides must be equal and non-zero
+    if (!SE.isKnownNonZero(strideP) || strideP != strideC) {
       
       // Debug Output
       utils::debug("[LF-NDD] --> Strides are different or zero!", 
         utils::YELLOW, "", utils::NO_TERM);
-      utils::debugSCEV(" (S = ", strideS, "", "", utils::NO_TERM);
-      utils::debugSCEV(" != ", strideL, "", "", utils::NO_TERM);
-      utils::debug(" = L)");
-      
+      utils::debugSCEV(" (P = ", strideP, "", "", utils::NO_TERM);
+      utils::debugSCEV(" != ", strideC, "", "", utils::NO_TERM);
+      utils::debug(" = C)");
+
       return true;
     }
 
     // Compute the distance between the starting addresses
-    // Example: base1 = 0, base2 = 8 -> delta = -8
-    const SCEV *delta = SE.getMinusSCEV(baseS, baseL); // base1 - base2
+    const SCEV *delta = SE.getMinusSCEV(baseC, baseP);
 
-    // Normalize delta according to stride sign
+    // Normalize according to stride sign
     const SCEV *dependenceDist =
-        SE.isKnownNegative(strideS) ? SE.getNegativeSCEV(delta) : delta;
+        SE.isKnownNegative(strideP) ? SE.getNegativeSCEV(delta) : delta;
 
     // Check if the distance is negative
     bool negative = SE.isKnownPredicate(
@@ -172,7 +165,8 @@ namespace graboidpasses::lf {
     if (negative) {
       utils::debug("[LF-NDD] --> Negative difference! (", 
         utils::YELLOW, "", utils::NO_TERM);
-      dyn_cast<SCEVConstant>(delta)->getAPInt().print(outs(), true);
+      if (const auto *C = dyn_cast<SCEVConstant>(delta))
+        C->getAPInt().print(outs(), true);
       utils::debug(")");
     }
 

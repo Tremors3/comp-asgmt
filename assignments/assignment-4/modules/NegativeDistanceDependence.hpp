@@ -35,8 +35,8 @@ namespace graboidpasses::lf {
 
     void getLoopInstructionByType(
       Loop *L,
-      std::vector<StoreInst *> *stores,
-      std::vector<LoadInst *> *loads) const;
+      std::vector<StoreInst *> &stores,
+      std::vector<LoadInst *> &loads) const;
 
     bool areNegativeDistanceDependent() const;
 
@@ -46,7 +46,7 @@ namespace graboidpasses::lf {
     
     bool isDistanceNegativeSE(
       Loop *storeLoop, Loop *loadLoop,
-      StoreInst *store, LoadInst *load) const;
+      Instruction *store, Instruction *load) const;
   };
 
 } // namespace graboidpasses::lf
